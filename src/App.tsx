@@ -1,0 +1,30 @@
+import { BrowserRouter as Router, Routes, Route } from 'react-router-dom'
+import { useAuthStore } from './stores/authStore'
+import LandingPage from './pages/LandingPage'
+import Dashboard from './pages/Dashboard'
+import FileEditor from './pages/FileEditor'
+import HistoryView from './pages/HistoryView'
+import Settings from './pages/Settings'
+import Register from './pages/Register'
+
+function App() {
+  const { isAuthenticated } = useAuthStore()
+
+  return (
+    <Router>
+      <div className="min-h-screen bg-github-dark text-white">
+        <Routes>
+          <Route path="/" element={isAuthenticated ? <Dashboard /> : <LandingPage />} />
+          <Route path="/dashboard" element={<Dashboard />} />
+          <Route path="/editor/:owner/:repo/*" element={<FileEditor />} />
+          <Route path="/history/:owner/:repo/*" element={<HistoryView />} />
+          <Route path="/settings" element={<Settings />} />
+          <Route path="/register" element={<Register />} />
+          
+        </Routes>
+      </div>
+    </Router>
+  )
+}
+
+export default App
