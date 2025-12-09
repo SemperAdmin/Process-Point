@@ -45,3 +45,139 @@ export const sbListMembers = async (): Promise<{ member_user_id: string; unit_id
   return (data as any) || []
 }
 
+// ===== Forms Management =====
+
+export interface UnitForm {
+  id: number
+  unit_id: string
+  name: string
+  kind: 'Inbound' | 'Outbound'
+  task_ids: string[]
+  purpose?: string
+  created_at?: string
+  updated_at?: string
+}
+
+export const sbListForms = async (unit_id: string): Promise<UnitForm[]> => {
+  const { data, error } = await supabase
+    .from('unit_forms')
+    .select('*')
+    .eq('unit_id', unit_id)
+    .order('name')
+  if (error) throw error
+  return (data as any) || []
+}
+
+export const sbCreateForm = async (form: Omit<UnitForm, 'id' | 'created_at' | 'updated_at'>): Promise<UnitForm> => {
+  const { data, error } = await supabase
+    .from('unit_forms')
+    .insert(form as any)
+    .select()
+    .single()
+  if (error) throw error
+  return data as any
+}
+
+export const sbUpdateForm = async (id: number, patch: Partial<UnitForm>): Promise<void> => {
+  const { error } = await supabase
+    .from('unit_forms')
+    .update({ ...patch, updated_at: new Date().toISOString() } as any)
+    .eq('id', id)
+  if (error) throw error
+}
+
+export const sbDeleteForm = async (id: number): Promise<void> => {
+  const { error } = await supabase
+    .from('unit_forms')
+    .delete()
+    .eq('id', id)
+  if (error) throw error
+}
+
+// ===== My Items Management =====
+
+export interface MyItem {
+  id: number
+  user_id: string
+  name: string
+  kind: 'Inbound' | 'Outbound'
+  form_id?: number
+  created_at?: string
+}
+
+export const sbListMyItems = async (user_id: string, kind?: 'Inbound' | 'Outbound'): Promise<MyItem[]> => {
+  let query = supabase
+    .from('my_items')
+    .select('*')
+    .eq('user_id', user_id)
+    .order('created_at', { ascending: false })
+
+  if (kind) {
+    query = query.eq('kind', kind)
+  }
+
+  const { data, error } = await query
+  if (error) throw error
+  return (data as any) || []
+}
+
+export const sbCreateMyItem = async (item: Omit<MyItem, 'id' | 'created_at'>): Promise<MyItem> => {
+  const { data, error } = await supabase
+    .from('my_items')
+    .insert(item as any)
+    .select()
+    .single()
+  if (error) throw error
+  return data as any
+}
+
+export const sbDeleteMyItem = async (id: number): Promise<void> => {
+  const { error } = await supabase
+    .from('my_items')
+    .delete()
+    .eq('id', id)
+  if (error) throw error
+}
+
+// ===== Form Submissions Management =====
+
+export interface MyFormSubmission {
+  id: number
+  user_id: string
+  unit_id: string
+  form_id: number
+  form_name: string
+  kind: 'Inbound' | 'Outbound'
+  member: any // JSONB
+  tasks: any[] // JSONB
+  created_at?: string
+}
+
+export const sbListSubmissions = async (user_id: string): Promise<MyFormSubmission[]> => {
+  const { data, error } = await supabase
+    .from('my_form_submissions')
+    .select('*')
+    .eq('user_id', user_id)
+    .order('created_at', { ascending: false })
+  if (error) throw error
+  return (data as any) || []
+}
+
+export const sbCreateSubmission = async (submission: Omit<MyFormSubmission, 'id' | 'created_at'>): Promise<MyFormSubmission> => {
+  const { data, error } = await supabase
+    .from('my_form_submissions')
+    .insert(submission as any)
+    .select()
+    .single()
+  if (error) throw error
+  return data as any
+}
+
+export const sbDeleteSubmission = async (id: number): Promise<void> => {
+  const { error } = await supabase
+    .from('my_form_submissions')
+    .delete()
+    .eq('id', id)
+  if (error) throw error
+}
+
