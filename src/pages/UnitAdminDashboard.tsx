@@ -10,6 +10,7 @@ import { UNITS } from '@/utils/units'
 import { getAssignedUnitsForRuc, setAssignedUnitsForRuc } from '@/utils/adminScopeStore'
 import { sbListUnitAdmins, sbUpsertUnitAdmin, sbRemoveUnitAdmin } from '@/services/adminService'
 import { getUnitAdmins, addUnitAdmin, removeUnitAdmin } from '@/utils/unitAdminsStore'
+import { sbListUsersByRuc } from '@/services/supabaseDataService'
 
 export default function UnitAdminDashboard() {
   const { user } = useAuthStore()
@@ -115,18 +116,42 @@ export default function UnitAdminDashboard() {
   useEffect(() => {
     if (!unitId) return
     const loadUsers = async () => {
-      const index = await fetchJson<{ users: UsersIndexEntry[] }>(`/data/users/users_index.json`)
-      const profiles: LocalUserProfile[] = []
+      let profiles: LocalUserProfile[] = []
       const assignedUnion = new Set<string>([...assignedUnits, user?.unit_id || ''].filter(Boolean))
-      for (const entry of index.users) {
-        const profile = await fetchJson<LocalUserProfile>(`/${entry.path}`)
-        const pruc = (profile.unit_id || '').includes('-') ? (profile.unit_id || '').split('-')[1] : (profile.unit_id || '')
-        if (String(pruc) === String(unitId) && (assignedUnion.size === 0 || assignedUnion.has(profile.unit_id))) profiles.push(profile)
+
+      // Try Supabase first, fallback to JSON files
+      if (import.meta.env.VITE_USE_SUPABASE === '1') {
+        try {
+          // Get all users for this RUC from Supabase
+          const allUsers = await sbListUsersByRuc(unitId)
+          // Filter by assigned units if needed
+          profiles = allUsers.filter(profile =>
+            assignedUnion.size === 0 || assignedUnion.has(profile.unit_id)
+          )
+        } catch (err) {
+          console.warn('Supabase listUsersByRuc failed, using JSON fallback:', err)
+          // Fall through to JSON loading
+        }
       }
+
+      // Fallback to JSON files if Supabase not enabled or failed
+      if (profiles.length === 0) {
+        const index = await fetchJson<{ users: UsersIndexEntry[] }>(`/data/users/users_index.json`)
+        for (const entry of index.users) {
+          const profile = await fetchJson<LocalUserProfile>(`/${entry.path}`)
+          const pruc = (profile.unit_id || '').includes('-') ? (profile.unit_id || '').split('-')[1] : (profile.unit_id || '')
+          if (String(pruc) === String(unitId) && (assignedUnion.size === 0 || assignedUnion.has(profile.unit_id))) {
+            profiles.push(profile)
+          }
+        }
+      }
+
+      // Add current user if they match the RUC
       const selfPruc = (user?.unit_id || '').includes('-') ? (user?.unit_id || '').split('-')[1] : (user?.unit_id || '')
       if (user && String(selfPruc) === String(unitId) && (assignedUnion.size === 0 || assignedUnion.has(user.unit_id!))) {
         if (!profiles.find(p => p.edipi === user.edipi)) profiles.push(user as any as LocalUserProfile)
       }
+
       const companySet = new Set<string>([...companies, ...profiles.map(p => p.company_id!).filter(Boolean)])
       const platoonSet = new Set<string>(profiles.map(p => p.platoon_id!).filter(Boolean))
       const companyList = Array.from(companySet)
