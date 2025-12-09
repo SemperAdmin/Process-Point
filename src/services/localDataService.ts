@@ -1,5 +1,5 @@
 import bcrypt from 'bcryptjs'
-import { sbGetUserByEdipi, sbVerifyPassword } from './supabaseDataService'
+import { sbGetUserByEdipi, sbVerifyPassword, sbGetProgressByMember, sbListMembers } from './supabaseDataService'
 
 export interface LocalUserProfile {
   user_id: string
@@ -90,6 +90,19 @@ export const getChecklistByUnit = async (unitId: string): Promise<UnitChecklist>
 }
 
 export const getProgressByMember = async (memberUserId: string): Promise<MemberProgress> => {
+  if (import.meta.env.VITE_USE_SUPABASE === '1') {
+    const data = await sbGetProgressByMember(memberUserId)
+    if (data) return data
+    // Return empty progress if not found in Supabase
+    return {
+      member_user_id: memberUserId,
+      unit_id: '',
+      official_checkin_timestamp: new Date().toISOString(),
+      current_file_sha: '',
+      progress_tasks: [],
+    }
+  }
+  // Fallback to JSON files for demo mode
   try {
     return await fetchJson<MemberProgress>(`/data/members/progress_${memberUserId}.json`)
   } catch {
@@ -104,6 +117,10 @@ export const getProgressByMember = async (memberUserId: string): Promise<MemberP
 }
 
 export const listMembers = async (): Promise<{ member_user_id: string; unit_id: string }[]> => {
+  if (import.meta.env.VITE_USE_SUPABASE === '1') {
+    return await sbListMembers()
+  }
+  // Fallback to JSON files for demo mode
   const index = await fetchJson<{ members: { member_user_id: string; unit_id: string }[] }>(`/data/members/index.json`)
   return index.members
 }

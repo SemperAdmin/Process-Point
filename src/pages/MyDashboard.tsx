@@ -8,6 +8,9 @@ import { listForms, UnitForm } from '@/utils/formsStore'
 import { getRoleOverride } from '@/utils/localUsersStore'
 import { listMyItems, createMyItem, MyItem } from '@/utils/myItemsStore'
 import { createSubmission, MyFormSubmission } from '@/utils/myFormSubmissionsStore'
+import { sbUpsertProgress } from '@/services/supabaseDataService'
+import { canonicalize } from '@/utils/json'
+import { sha256String } from '@/utils/crypto'
 
 export default function MyDashboard() {
   const navigate = useNavigate()
@@ -317,10 +320,47 @@ export default function MyDashboard() {
               </div>
               <div className="mt-6 flex gap-2 justify-end">
                 <button
-                  onClick={() => {
-                    if (!submissionPreview) return
+                  onClick={async () => {
+                    if (!submissionPreview || !user) return
                     const { id, created_at, ...rest } = submissionPreview
                     const saved = createSubmission(rest)
+
+                    // Update member progress in Supabase when VITE_USE_SUPABASE is enabled
+                    if (import.meta.env.VITE_USE_SUPABASE === '1') {
+                      try {
+                        // Get existing progress or create new
+                        const existingProgress = await getProgressByMember(user.user_id)
+
+                        // Merge new tasks with existing ones (avoid duplicates)
+                        const existingTaskIds = new Set(existingProgress.progress_tasks.map(t => t.sub_task_id))
+                        const newTasks = submissionPreview.tasks
+                          .filter(t => !existingTaskIds.has(t.sub_task_id))
+                          .map(t => ({
+                            sub_task_id: t.sub_task_id,
+                            status: t.status,
+                            cleared_by_user_id: undefined,
+                            cleared_at_timestamp: undefined
+                          }))
+
+                        const updatedProgress = {
+                          member_user_id: user.user_id,
+                          unit_id: user.unit_id,
+                          official_checkin_timestamp: existingProgress.official_checkin_timestamp || new Date().toISOString(),
+                          progress_tasks: [...existingProgress.progress_tasks, ...newTasks],
+                          current_file_sha: ''
+                        }
+
+                        // Calculate SHA for integrity
+                        const canonical = canonicalize(updatedProgress)
+                        const sha = await sha256String(canonical)
+                        updatedProgress.current_file_sha = sha
+
+                        await sbUpsertProgress(updatedProgress)
+                      } catch (err) {
+                        console.error('Failed to update member progress:', err)
+                      }
+                    }
+
                     setSubmissionPreview(null)
                   }}
                   className="px-4 py-2 bg-github-blue hover:bg-blue-600 text-white rounded"

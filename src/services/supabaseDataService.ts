@@ -27,3 +27,21 @@ export const sbUpsertProgress = async (progress: MemberProgress): Promise<void> 
   if (error) throw error
 }
 
+export const sbGetProgressByMember = async (memberUserId: string): Promise<MemberProgress | null> => {
+  const { data, error } = await supabase
+    .from('members_progress')
+    .select('*')
+    .eq('member_user_id', memberUserId)
+    .maybeSingle()
+  if (error) throw error
+  return (data as any) || null
+}
+
+export const sbListMembers = async (): Promise<{ member_user_id: string; unit_id: string }[]> => {
+  const { data, error } = await supabase
+    .from('members_progress')
+    .select('member_user_id, unit_id')
+  if (error) throw error
+  return (data as any) || []
+}
+
