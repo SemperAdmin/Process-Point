@@ -51,13 +51,23 @@ export const sbListMembers = async (): Promise<{ member_user_id: string; unit_id
 // ===== Forms Management =====
 
 export const sbListForms = async (unit_id: string): Promise<UnitForm[]> => {
-  const { data, error } = await supabase
-    .from('unit_forms')
-    .select('*')
-    .eq('unit_id', unit_id)
-    .order('name')
+  const tryEq = async (val: string) => supabase.from('unit_forms').select('*').eq('unit_id', val).order('name')
+  const ruc = (unit_id || '').includes('-') ? (unit_id || '').split('-')[1] : unit_id
+  let { data, error } = await tryEq(unit_id)
   if (error) throw error
-  return (data as any) || []
+  let rows = (data as any) || []
+  if (!rows.length && ruc) {
+    const r = await tryEq(ruc)
+    if (r.error) throw r.error
+    rows = (rows as any).concat(r.data || [])
+    if (!rows.length) {
+      const like = await supabase.from('unit_forms').select('*').ilike('unit_id', `%-${ruc}-%`).order('name')
+      if (like.error) throw like.error
+      rows = (rows as any).concat(like.data || [])
+    }
+  }
+  const dedup = Array.from(new Map((rows as any[]).map(f => [f.id, f])).values())
+  return dedup as any
 }
 
 export const sbCreateForm = async (form: Omit<UnitForm, 'id' | 'created_at' | 'updated_at'>): Promise<UnitForm> => {
@@ -179,4 +189,3 @@ export const sbListUsersByRuc = async (ruc: string): Promise<LocalUserProfile[]>
     return String(userRuc) === String(ruc)
   })
 }
-

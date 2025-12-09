@@ -84,6 +84,39 @@ export const verifyPassword = async (plain: string, hashed: string): Promise<boo
 }
 
 export const getChecklistByUnit = async (unitId: string): Promise<UnitChecklist> => {
+  if (import.meta.env.VITE_USE_SUPABASE === '1') {
+    try {
+      const { listSections, listSubTasks } = await import('./supabaseUnitConfigService')
+      const sections = await listSections(unitId)
+      const subTasks = await listSubTasks(unitId)
+
+      const bySection: Record<number, SubTaskDef[]> = {}
+      for (const st of subTasks) {
+        if (!bySection[st.section_id]) bySection[st.section_id] = []
+        bySection[st.section_id].push({
+          sub_task_id: st.sub_task_id,
+          description: st.description,
+          responsible_user_id: st.responsible_user_ids || [],
+        })
+      }
+
+      const checklist: UnitChecklist = {
+        unit_id: unitId,
+        checklist_name: 'Unit Checklist',
+        sections: sections.map(sec => ({
+          unit_checklist_id: String(sec.id),
+          section_name: sec.section_name,
+          prerequisite_item_id: sec.prerequisite_item_id || '',
+          physical_location: sec.physical_location || '',
+          phone_number: sec.phone_number || '',
+          sub_tasks: bySection[sec.id] || [],
+        })),
+      }
+      return checklist
+    } catch {
+      // Fallback to static files if Supabase fails
+    }
+  }
   const index = await fetchJson<{ units: { unit_id: string; path: string }[] }>(`/data/units/index.json`)
   const match = index.units.find(u => u.unit_id === unitId) || index.units[0]
   return await fetchJson<UnitChecklist>(`/${match.path}`)

@@ -83,6 +83,29 @@ export default function UnitAdminDashboard() {
       const ids = comps.map(c => c.company_id)
       setCompanies(ids)
       if (!selectedCompany && ids.length) setSelectedCompany(ids[0])
+
+      if (tsks.length === 0) {
+        const fList = await listForms(unitId)
+        const allIds = Array.from(new Set(fList.flatMap(f => f.task_ids)))
+        if (allIds.length) {
+          const sectionByCode = new Map<string, number>()
+          for (const s of secs) {
+            sectionByCode.set(s.section_name, s.id)
+            const disp = (s as any).display_name
+            if (disp) sectionByCode.set(String(disp), s.id)
+          }
+          for (const tid of allIds) {
+            const prefix = String(tid).split('-')[0]
+            const sid = sectionByCode.get(prefix) || secs[0]?.id || 0
+            if (!sid) continue
+            try {
+              await createSubTask({ unit_id: unitId, section_id: sid, sub_task_id: tid, description: String(tid), responsible_user_ids: defaultEdipis })
+            } catch {}
+          }
+          const refreshed = await listSubTasks(unitId)
+          setTasks(refreshed)
+        }
+      }
     }
     load()
   }, [unitId])
@@ -571,9 +594,8 @@ export default function UnitAdminDashboard() {
                     setTasksError('')
                     const secs = await listSections(unitId)
                     setSections(secs)
-                    const filtered = selectedCompany ? secs.filter(s => (s as any).company_id === selectedCompany) : secs
-                    setSectionOptions(filtered)
-                    const defaultSectionId = filtered[0]?.id || 0
+                    setSectionOptions(secs)
+                    const defaultSectionId = secs[0]?.id || 0
                     setNewTask({ section_id: defaultSectionId, sub_task_id: '', description: '', responsible_user_ids: defaultEdipis.join(', '), location: '', instructions: '' })
                     setCreateModalOpen(true)
                   }}
@@ -838,6 +860,25 @@ export default function UnitAdminDashboard() {
                             )
                           })}
                         </div>
+                        <div className="space-y-2">
+                          <div className="text-gray-400 text-sm">Selected tasks</div>
+                          <div className="flex flex-wrap gap-2">
+                            {newFormTaskIds.map(id => (
+                              <span key={id} className="inline-flex items-center gap-2 px-2 py-1 bg-github-gray bg-opacity-20 border border-github-border rounded text-white">
+                                {id}
+                                <button
+                                  onClick={() => {
+                                    const next = newFormTaskIds.filter(x => x !== id)
+                                    setNewFormTaskIds(next)
+                                  }}
+                                  className="px-2 py-0.5 bg-gray-700 hover:bg-gray-600 text-white rounded text-xs"
+                                >
+                                  Remove
+                                </button>
+                              </span>
+                            ))}
+                          </div>
+                        </div>
                       </div>
                       <div className="mt-6 flex gap-2 justify-end">
                         <button
@@ -910,6 +951,7 @@ export default function UnitAdminDashboard() {
                               setNewFormKind(f.kind)
                               setNewFormTaskIds(f.task_ids)
                               setNewFormPurpose((f.purpose as UnitFormPurpose) || 'PCS')
+                              ;(async () => { setTasks(await listSubTasks(unitId)) })()
                               setCreateModalOpen(true)
                             }}
                             className="px-3 py-1 bg-github-blue hover:bg-blue-600 text-white rounded"
