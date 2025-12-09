@@ -152,3 +152,31 @@ export const sbDeleteSubmission = async (id: number): Promise<void> => {
   if (error) throw error
 }
 
+// ===== Users Management =====
+
+export const sbListUsers = async (): Promise<LocalUserProfile[]> => {
+  const { data, error } = await supabase
+    .from('users')
+    .select('*')
+    .order('created_at_timestamp', { ascending: false })
+  if (error) throw error
+  return (data as any) || []
+}
+
+export const sbListUsersByRuc = async (ruc: string): Promise<LocalUserProfile[]> => {
+  const { data, error } = await supabase
+    .from('users')
+    .select('*')
+    .order('created_at_timestamp', { ascending: false })
+  if (error) throw error
+
+  // Filter by RUC (unit_id contains RUC)
+  const users = (data as any) || []
+  return users.filter((user: LocalUserProfile) => {
+    const userRuc = (user.unit_id || '').includes('-')
+      ? (user.unit_id || '').split('-')[1]
+      : (user.unit_id || '')
+    return String(userRuc) === String(ruc)
+  })
+}
+
