@@ -109,11 +109,11 @@ export default function TaskManagerDashboard() {
         return matchesSectionId || matchesCode || matchesDisplayCode || matchesResponsible
       })
       const scoped = filtered.map(t => {
-      const scoped = filtered.map(t => {
         const secName = userSectionDisplay || userSectionCode || sectionLabel || ''
         const responsibleLabels = t.responsible_user_ids.map(ed => {
           const p = profiles[ed]
           const name = p ? [p.first_name, p.last_name].filter(Boolean).join(' ') : ed
+          return name
         }).join(', ')
         return { section: secName, description: t.description, location: t.location, instructions: t.instructions, responsible: responsibleLabels }
       })
