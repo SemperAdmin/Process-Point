@@ -62,9 +62,14 @@ export default function UnitAdminDashboard() {
   const [addAdminForUnit, setAddAdminForUnit] = useState<string | null>(null)
   const [addAdminSelectedEdipi, setAddAdminSelectedEdipi] = useState<string>('')
   const [globalAdmins, setGlobalAdmins] = useState<Array<{ unit_key: string; unit_name: string; admin_user_id: string; ruc?: string }>>([])
+  const [adminsLoading, setAdminsLoading] = useState(true)
   const [pendingRoles, setPendingRoles] = useState<Record<string, 'Section_Manager' | 'Member'>>({})
   const [pendingCompanyForEdipi, setPendingCompanyForEdipi] = useState<Record<string, string>>({})
   const [pendingSectionForEdipi, setPendingSectionForEdipi] = useState<Record<string, string>>({})
+  const [editMemberEdipi, setEditMemberEdipi] = useState<string | null>(null)
+  const [editMemberCompany, setEditMemberCompany] = useState<string>('')
+  const [editMemberSection, setEditMemberSection] = useState<string>('')
+  const [editMemberRole, setEditMemberRole] = useState<'Section_Manager' | 'Member'>('Member')
 
   useEffect(() => {
     const items = UNITS.filter(u => String(u.ruc) === managedRuc)
@@ -133,6 +138,7 @@ export default function UnitAdminDashboard() {
       } catch {
         setGlobalAdmins([])
       }
+      setAdminsLoading(false)
     })()
   }, [])
 
@@ -198,11 +204,26 @@ export default function UnitAdminDashboard() {
   }, [unitId, selectedCompany, selectedPlatoon, assignedUnits])
 
   const overrideRole = getRoleOverride(user?.edipi || '')?.org_role
-  const hasUnitAdmin = !!(user?.is_app_admin || user?.is_unit_admin || overrideRole === 'Unit_Admin' || user?.org_role === 'Unit_Admin')
-  if (!user || !hasUnitAdmin) {
+  const isAssignedAdmin = !!globalAdmins.find(a => a.admin_user_id === (user?.edipi || ''))
+  const isAppAdmin = !!(user?.is_app_admin || user?.org_role === ('App_Admin' as any))
+  if (!user) {
     return (
       <div className="min-h-screen bg-github-dark flex items-center justify-center">
         <p className="text-gray-400">Access denied</p>
+      </div>
+    )
+  }
+  if (adminsLoading) {
+    return (
+      <div className="min-h-screen bg-github-dark flex items-center justify-center">
+        <p className="text-gray-400">Loading admin assignments…</p>
+      </div>
+    )
+  }
+  if (!isAppAdmin && !isAssignedAdmin) {
+    return (
+      <div className="min-h-screen bg-github-dark flex items-center justify-center">
+        <p className="text-gray-400">Access denied — not assigned as Unit Admin</p>
       </div>
     )
   }
@@ -1065,83 +1086,91 @@ export default function UnitAdminDashboard() {
                       return (
                         <tr key={p.edipi} className="border-t border-github-border text-gray-300">
                           <td className="p-2">{[p.rank, name].filter(Boolean).join(' ')}</td>
-                          <td className="p-2">
-                            <select
-                              value={pendingCompanyForEdipi[p.edipi] ?? company}
-                              onChange={e => setPendingCompanyForEdipi(prev => ({ ...prev, [p.edipi]: e.target.value }))}
-                              className="px-3 py-2 bg-github-gray bg-opacity-20 border border-github-border rounded text-white"
-                            >
-                              <option value="">Select company</option>
-                              {companies.map(cid => (
-                                <option key={cid} value={cid}>{cid}</option>
-                              ))}
-                            </select>
-                          </td>
-                          <td className="p-2">
-                            <select
-                              value={pendingSectionForEdipi[p.edipi] ?? String(p.platoon_id || '')}
-                              onChange={e => setPendingSectionForEdipi(prev => ({ ...prev, [p.edipi]: e.target.value }))}
-                              className="px-3 py-2 bg-github-gray bg-opacity-20 border border-github-border rounded text-white"
-                            >
-                              <option value="">Select section</option>
-                              {(company ? sections.filter(s => (s as any).company_id === company) : sections).map(s => (
-                                <option key={s.id} value={String(s.id)}>{(s as any).display_name || s.section_name}</option>
-                              ))}
-                            </select>
-                          </td>
+                          <td className="p-2">{company || ''}</td>
+                          <td className="p-2">{sectionLabel}</td>
                           <td className="p-2">{role}</td>
                           <td className="p-2">
-                            <div className="flex items-center gap-2">
-                              <select
-                                value={pendingRoles[p.edipi] ?? role}
-                                onChange={e => setPendingRoles(prev => ({ ...prev, [p.edipi]: e.target.value as any }))}
-                                className="px-3 py-2 bg-github-gray bg-opacity-20 border border-github-border rounded text-white"
-                              >
-                                <option value="Section_Manager">Section Manager</option>
-                                <option value="Member">Member</option>
-                              </select>
-                              <button
-                                onClick={() => {
-                                  const next = (pendingRoles[p.edipi] ?? role) as any
-                                  setUserRoleOverride(p.edipi, next)
-                                  setPendingRoles(prev => ({ ...prev, [p.edipi]: next }))
-                                  ;(async () => {
-                                    if (import.meta.env.VITE_USE_SUPABASE === '1') {
-                                      const newCompany = pendingCompanyForEdipi[p.edipi]
-                                      const newSectionKey = pendingSectionForEdipi[p.edipi]
-                                      const sectionId = newSectionKey && /^\d+$/.test(newSectionKey) ? Number(newSectionKey) : undefined
-                                      try {
-                                        await sbUpdateUser(p.user_id, {
-                                          company_id: newCompany || undefined,
-                                          platoon_id: sectionId ? String(sectionId) : (newSectionKey || undefined),
-                                          org_role: next,
-                                        } as any)
-                                        const updated = { ...p }
-                                        if (newCompany !== undefined) updated.company_id = newCompany
-                                        if (newSectionKey !== undefined) updated.platoon_id = newSectionKey as any
-                                        updated.org_role = next
-                                        setEdipiMap(prev => ({ ...prev, [p.edipi]: updated }))
-                                      } catch {}
-                                    }
-                                  })()
-                                }}
-                                className="px-3 py-2 bg-github-blue hover:bg-blue-600 text-white rounded"
-                              >
-                                Save
-                              </button>
-                              <button
-                                onClick={() => setPendingRoles(prev => { const { [p.edipi]: _, ...rest } = prev; return rest })}
-                                className="px-3 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded"
-                              >
-                                Cancel
-                              </button>
-                            </div>
+                            <button
+                              onClick={() => {
+                                setEditMemberEdipi(p.edipi)
+                                setEditMemberCompany(p.company_id || '')
+                                setEditMemberSection(String(p.platoon_id || ''))
+                                setEditMemberRole((role as any) || 'Member')
+                              }}
+                              className="px-3 py-2 bg-github-blue hover:bg-blue-600 text-white rounded"
+                            >
+                              Update
+                            </button>
                           </td>
                         </tr>
                       )
                     })}
                   </tbody>
                 </table>
+                {editMemberEdipi && (
+                  <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50">
+                    <div className="w-full max-w-lg bg-black border border-github-border rounded-xl p-6">
+                      <h3 className="text-white text-lg mb-4">Update Member</h3>
+                      <div className="grid grid-cols-1 gap-3">
+                        <select
+                          value={editMemberCompany}
+                          onChange={e => setEditMemberCompany(e.target.value)}
+                          className="px-3 py-2 bg-github-gray bg-opacity-20 border border-github-border rounded text-white"
+                        >
+                          <option value="">Select company</option>
+                          {companies.map(cid => (
+                            <option key={cid} value={cid}>{cid}</option>
+                          ))}
+                        </select>
+                        <select
+                          value={editMemberSection}
+                          onChange={e => setEditMemberSection(e.target.value)}
+                          className="px-3 py-2 bg-github-gray bg-opacity-20 border border-github-border rounded text-white"
+                        >
+                          <option value="">Select section</option>
+                          {(editMemberCompany ? sections.filter(s => (s as any).company_id === editMemberCompany) : sections).map(s => (
+                            <option key={s.id} value={String(s.id)}>{(s as any).display_name || s.section_name}</option>
+                          ))}
+                        </select>
+                        <select
+                          value={editMemberRole}
+                          onChange={e => setEditMemberRole(e.target.value as any)}
+                          className="px-3 py-2 bg-github-gray bg-opacity-20 border border-github-border rounded text-white"
+                        >
+                          <option value="Section_Manager">Section Manager</option>
+                          <option value="Member">Member</option>
+                        </select>
+                      </div>
+                      <div className="mt-6 flex gap-2 justify-end">
+                        <button
+                          onClick={async () => {
+                            const p = edipiMap[editMemberEdipi!]
+                            if (!p) { setEditMemberEdipi(null); return }
+                            try {
+                              if (import.meta.env.VITE_USE_SUPABASE === '1') {
+                                const sectionId = editMemberSection && /^\d+$/.test(editMemberSection) ? Number(editMemberSection) : undefined
+                                await sbUpdateUser(p.user_id, {
+                                  company_id: editMemberCompany || undefined,
+                                  platoon_id: sectionId ? String(sectionId) : (editMemberSection || undefined),
+                                  org_role: editMemberRole,
+                                } as any)
+                              }
+                              const updated = { ...p, company_id: editMemberCompany || p.company_id, platoon_id: editMemberSection || (p.platoon_id as any), org_role: editMemberRole }
+                              setEdipiMap(prev => ({ ...prev, [p.edipi]: updated }))
+                              setEditMemberEdipi(null)
+                            } catch {
+                              setEditMemberEdipi(null)
+                            }
+                          }}
+                          className="px-4 py-2 bg-github-blue hover:bg-blue-600 text-white rounded"
+                        >
+                          Save
+                        </button>
+                        <button onClick={() => setEditMemberEdipi(null)} className="px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded">Cancel</button>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
           </div>

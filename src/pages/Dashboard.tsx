@@ -24,7 +24,7 @@ export default function Dashboard() {
         return
       }
       if (user.org_role === 'Section_Manager') {
-        const p = await listPendingForSectionManager(user.user_id, user.unit_id)
+        const p = await listPendingForSectionManager(user.user_id, user.unit_id, user.edipi)
         const a = await listArchivedForUser(user.user_id, user.unit_id)
         setPending(p)
         setArchived(a)

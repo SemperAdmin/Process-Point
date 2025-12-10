@@ -5,6 +5,7 @@ import { fetchJson, LocalUserProfile, UsersIndexEntry, getChecklistByUnit, listM
 import { sbListUsers } from '@/services/supabaseDataService'
 import { listSections } from '@/utils/unitStructure'
 import { listSubTasks, createSubTask, updateSubTask, deleteSubTask, UnitSubTask } from '@/utils/unitTasks'
+import { sbUpdateMemberProgressTask } from '@/services/supabaseDataService'
 import { sbUpsertProgress } from '@/services/supabaseDataService'
 import { canonicalize } from '@/utils/json'
 import { sha256String } from '@/utils/crypto'
@@ -31,6 +32,9 @@ export default function TaskManagerDashboard() {
   const [taskEditCompletionKind, setTaskEditCompletionKind] = useState<'Text' | 'Date' | 'Options' | ''>('')
   const [taskEditCompletionLabel, setTaskEditCompletionLabel] = useState('')
   const [taskEditCompletionOptions, setTaskEditCompletionOptions] = useState('')
+  const [subTaskMap, setSubTaskMap] = useState<Record<string, UnitSubTask>>({})
+  const [completionSelections, setCompletionSelections] = useState<Record<string, string | string[]>>({})
+  const [actionMsg, setActionMsg] = useState('')
   const [createOpen, setCreateOpen] = useState(false)
   const [newDescription, setNewDescription] = useState('')
   const [newLocation, setNewLocation] = useState('')
@@ -86,6 +90,7 @@ export default function TaskManagerDashboard() {
       setSectionDisplayMap(displayMap)
       // Resolve user's section and load tasks from Supabase unit_sub_tasks
       let sectionTaskIds = new Set<string>()
+      const subTaskById: Record<string, UnitSubTask> = {}
       try {
         const secs = await listSections(unitKey)
         const byId = secs.find(s => String(s.id) === String(user.platoon_id))
@@ -102,9 +107,11 @@ export default function TaskManagerDashboard() {
           const matchesDisplayCode = secDisplay ? String(t.sub_task_id || '').startsWith(`${secDisplay}-`) : false
           if (matchesSectionId || matchesCode || matchesDisplayCode) {
             sectionTaskIds.add(t.sub_task_id)
+            subTaskById[t.sub_task_id] = t
           }
         }
       } catch {}
+      setSubTaskMap(subTaskById)
       // Determine form-kind task id sets
       const ruc = (user.unit_id || '').includes('-') ? (user.unit_id || '').split('-')[1] : (user.unit_id || '')
       let inboundTaskIds = new Set<string>()
@@ -114,9 +121,6 @@ export default function TaskManagerDashboard() {
         inboundTaskIds = new Set(forms.filter(f => f.kind === 'Inbound').flatMap(f => f.task_ids))
         outboundTaskIds = new Set(forms.filter(f => f.kind === 'Outbound').flatMap(f => f.task_ids))
       } catch {}
-      // Fallback: if form sets are empty, use all section tasks to populate UI so managers see data
-      if (inboundTaskIds.size === 0) inboundTaskIds = new Set(sectionTaskIds)
-      if (outboundTaskIds.size === 0) outboundTaskIds = new Set(sectionTaskIds)
       const sectionMembers = Object.values(profiles).filter(p => p.unit_id === user.unit_id && (!!user.platoon_id ? String(p.platoon_id) === String(user.platoon_id) : true))
       const sectionEdipis = new Set(sectionMembers.map(p => p.edipi))
       setDefaultResponsible(Array.from(sectionEdipis))
@@ -289,6 +293,7 @@ export default function TaskManagerDashboard() {
                               <th className="text-left p-2">EDIPI</th>
                               <th className="text-left p-2">Company</th>
                               <th className="text-left p-2">Section</th>
+                              <th className="text-left p-2">Complete</th>
                             </tr>
                           </thead>
                           <tbody>
@@ -300,12 +305,124 @@ export default function TaskManagerDashboard() {
                               const company = m?.company_id || ''
                               const secKey = m?.platoon_id ? String(m.platoon_id) : ''
                               const secLabel = sectionDisplayMap[secKey] || secKey || ''
+                              const key = `${subTaskId}:${mid}`
+                              const tdef = subTaskMap[subTaskId]
+                              const kind = (tdef as any)?.completion_kind as any
+                              const opts = (tdef as any)?.completion_options || []
+                              const current = completionSelections[key]
                               return (
                                 <tr key={`${subTaskId}-${mid}`} className="border-t border-github-border text-gray-300">
                                   <td className="p-2">{memberDisp}</td>
                                   <td className="p-2">{edipi}</td>
                                   <td className="p-2">{company}</td>
                                   <td className="p-2">{secLabel}</td>
+                                  <td className="p-2">
+                                    {kind === 'Options' ? (
+                                      <div className="flex flex-wrap gap-2">
+                                        {opts.map((o: string) => (
+                                          <label key={o} className="inline-flex items-center gap-2">
+                                            <input
+                                              type="checkbox"
+                                              checked={Array.isArray(current) ? current.includes(o) : false}
+                                              onChange={e => {
+                                                const prev = Array.isArray(current) ? current.slice() : []
+                                                const next = e.target.checked ? Array.from(new Set([...prev, o])) : prev.filter(x => x !== o)
+                                                setCompletionSelections(s => ({ ...s, [key]: next }))
+                                              }}
+                                            />
+                                            <span>{o}</span>
+                                          </label>
+                                        ))}
+                                        <button
+                                          className="px-2 py-1 bg-github-blue hover:bg-blue-600 text-white rounded text-xs"
+                                          onClick={async () => {
+                                            const vals = Array.isArray(completionSelections[key]) ? (completionSelections[key] as string[]) : []
+                                            if (import.meta.env.VITE_USE_SUPABASE === '1') {
+                                              const fullName = [user?.first_name, user?.last_name].filter(Boolean).join(' ')
+                                              const userSecKey = String(user?.platoon_id || '')
+                                              const userSecLabel = sectionDisplayMap[userSecKey] || userSecKey || ''
+                                              const note = `${user?.rank || ''} ${fullName} - ${userSecLabel}`.trim()
+                                              await sbUpdateMemberProgressTask(mid, user!.unit_id, subTaskId, { completion_values: vals, status: 'Cleared', cleared_by_user_id: user!.user_id, cleared_at_timestamp: new Date().toISOString(), log: { note, by_user_id: user!.user_id, at: new Date().toISOString() } })
+                                            }
+                                            setInboundGroups(prev => {
+                                              const next = { ...prev }
+                                              const list = (next[subTaskId] || []).filter(m => m !== mid)
+                                              if (list.length) next[subTaskId] = list; else delete next[subTaskId]
+                                              return next
+                                            })
+                                            setCompletionSelections(s => ({ ...s, [key]: [] }))
+                                            setActionMsg('Saved')
+                                          }}
+                                        >
+                                          Save
+                                        </button>
+                                      </div>
+                                    ) : kind === 'Date' ? (
+                                      <div className="flex items-center gap-2">
+                                        <input
+                                          type="date"
+                                          value={typeof current === 'string' ? current : ''}
+                                          onChange={e => setCompletionSelections(s => ({ ...s, [key]: e.target.value }))}
+                                          className="px-2 py-1 bg-github-gray bg-opacity-20 border border-github-border rounded text-white"
+                                        />
+                                        <button
+                                          className="px-2 py-1 bg-github-blue hover:bg-blue-600 text-white rounded text-xs"
+                                          onClick={async () => {
+                                            const val = typeof completionSelections[key] === 'string' ? (completionSelections[key] as string) : ''
+                                            if (import.meta.env.VITE_USE_SUPABASE === '1') {
+                                              const fullName = [user?.first_name, user?.last_name].filter(Boolean).join(' ')
+                                              const userSecKey = String(user?.platoon_id || '')
+                                              const userSecLabel = sectionDisplayMap[userSecKey] || userSecKey || ''
+                                              const note = `${user?.rank || ''} ${fullName} - ${userSecLabel}`.trim()
+                                              await sbUpdateMemberProgressTask(mid, user!.unit_id, subTaskId, { completion_values: val ? [val] : [], status: 'Cleared', cleared_by_user_id: user!.user_id, cleared_at_timestamp: new Date().toISOString(), log: { note, by_user_id: user!.user_id, at: new Date().toISOString() } })
+                                            }
+                                            setInboundGroups(prev => {
+                                              const next = { ...prev }
+                                              const list = (next[subTaskId] || []).filter(m => m !== mid)
+                                              if (list.length) next[subTaskId] = list; else delete next[subTaskId]
+                                              return next
+                                            })
+                                            setCompletionSelections(s => ({ ...s, [key]: '' }))
+                                            setActionMsg('Saved')
+                                          }}
+                                        >
+                                          Save
+                                        </button>
+                                      </div>
+                                    ) : (
+                                      <div className="flex items-center gap-2">
+                                        <input
+                                          value={typeof current === 'string' ? current : ''}
+                                          onChange={e => setCompletionSelections(s => ({ ...s, [key]: e.target.value }))}
+                                          placeholder="Value"
+                                          className="px-2 py-1 bg-github-gray bg-opacity-20 border border-github-border rounded text-white"
+                                        />
+                                        <button
+                                          className="px-2 py-1 bg-github-blue hover:bg-blue-600 text-white rounded text-xs"
+                                          onClick={async () => {
+                                            const val = typeof completionSelections[key] === 'string' ? (completionSelections[key] as string) : ''
+                                            if (import.meta.env.VITE_USE_SUPABASE === '1') {
+                                              const fullName = [user?.first_name, user?.last_name].filter(Boolean).join(' ')
+                                              const userSecKey = String(user?.platoon_id || '')
+                                              const userSecLabel = sectionDisplayMap[userSecKey] || userSecKey || ''
+                                              const note = `${user?.rank || ''} ${fullName} - ${userSecLabel}`.trim()
+                                              await sbUpdateMemberProgressTask(mid, user!.unit_id, subTaskId, { completion_values: val ? [val] : [], status: 'Cleared', cleared_by_user_id: user!.user_id, cleared_at_timestamp: new Date().toISOString(), log: { note, by_user_id: user!.user_id, at: new Date().toISOString() } })
+                                            }
+                                            setInboundGroups(prev => {
+                                              const next = { ...prev }
+                                              const list = (next[subTaskId] || []).filter(m => m !== mid)
+                                              if (list.length) next[subTaskId] = list; else delete next[subTaskId]
+                                              return next
+                                            })
+                                            setCompletionSelections(s => ({ ...s, [key]: '' }))
+                                            setActionMsg('Saved')
+                                          }}
+                                        >
+                                          Save
+                                        </button>
+                                      </div>
+                                    )}
+                                  </td>
                                 </tr>
                               )
                             })}

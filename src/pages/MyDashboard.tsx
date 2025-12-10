@@ -28,6 +28,10 @@ export default function MyDashboard() {
   const [taskLabels, setTaskLabels] = useState<Record<string, { section_name: string; description: string }>>({})
   const [submissionPreview, setSubmissionPreview] = useState<MyFormSubmission | null>(null)
   const [sectionDisplay, setSectionDisplay] = useState('')
+  const [previewPendingBySection, setPreviewPendingBySection] = useState<Record<string, string[]>>({})
+  const [previewCompletedBySection, setPreviewCompletedBySection] = useState<Record<string, { text: string; note?: string; at?: string }[]>>({})
+  const [previewCompletedRows, setPreviewCompletedRows] = useState<Array<{ section: string; task: string; note?: string; at?: string }>>([])
+  const [sectionDisplayMap, setSectionDisplayMap] = useState<Record<string, string>>({})
 
   const overrideRole = getRoleOverride(user?.edipi || '')?.org_role
   const isSectionLead = !!(user?.section_role === 'Section_Reviewer' || user?.org_role === 'Section_Manager' || overrideRole === 'Section_Manager')
@@ -43,7 +47,7 @@ export default function MyDashboard() {
       }
       if (isSectionLead) {
         try {
-          const p = await listPendingForSectionManager(user.user_id, user.unit_id)
+          const p = await listPendingForSectionManager(user.user_id, user.unit_id, user.edipi)
           setPendingSection(p)
           const checklist = await getChecklistByUnit(user.unit_id)
           const labels: Record<string, { section_name: string; description: string }> = {}
@@ -76,6 +80,12 @@ export default function MyDashboard() {
       if (!uid || !secId) { setSectionDisplay(''); return }
       try {
         const secs = await listSections(uid)
+        const map: Record<string, string> = {}
+        for (const s of secs) {
+          map[s.section_name] = ((s as any).display_name || s.section_name)
+          map[String(s.id)] = ((s as any).display_name || s.section_name)
+        }
+        setSectionDisplayMap(map)
         const byId = secs.find(s => String(s.id) === String(secId))
         if (byId) { setSectionDisplay(((byId as any).display_name || byId.section_name) || ''); return }
         const byCode = secs.find(s => s.section_name === secId)
@@ -153,17 +163,56 @@ export default function MyDashboard() {
                                 .filter(tid => pendingSet.has(tid))
                                 .map(tid => ({
                                   sub_task_id: tid,
-                                  description: `${(taskLabels[tid]?.section_name ? taskLabels[tid]?.section_name + ' - ' : '')}${(taskLabels[tid]?.description || tid)}`,
+                                  description: (taskLabels[tid]?.description || tid),
                                   status: 'Pending' as const,
                                 }))
+                              // Build completed grouping by section for this form
+                              const completedSet = new Set(progress.progress_tasks.filter(t => t.status === 'Cleared').map(t => t.sub_task_id))
+                              const completedBySection: Record<string, { text: string; note?: string; at?: string }[]> = {}
+                              for (const tid of form.task_ids) {
+                                if (!completedSet.has(tid)) continue
+                                const label = taskLabels[tid]
+                                const secCode = label?.section_name || ''
+                                const secName = secCode ? (sectionDisplayMap[secCode] || secCode) : ''
+                                const desc = (label?.description || tid)
+                                const entry = (progress.progress_tasks || []).find(t => String(t.sub_task_id) === String(tid)) as any
+                                const lastLog = Array.isArray(entry?.logs) && entry.logs.length ? entry.logs[entry.logs.length - 1] : undefined
+                                const row = { text: desc, note: lastLog?.note, at: lastLog?.at }
+                                if (!completedBySection[secName]) completedBySection[secName] = []
+                                completedBySection[secName].push(row)
+                              }
+                              setPreviewCompletedBySection(completedBySection)
+                              // Build consolidated completed rows across all sections
+                              const consolidated: Array<{ section: string; task: string; note?: string; at?: string }> = []
+                              for (const [sec, rows] of Object.entries(completedBySection)) {
+                                for (const r of rows) consolidated.push({ section: sec, task: r.text, note: r.note, at: r.at })
+                              }
+                              setPreviewCompletedRows(consolidated)
                             } catch {}
                             if (tasks.length === 0) {
                               tasks = form.task_ids.map(tid => ({
                                 sub_task_id: tid,
-                                description: `${(taskLabels[tid]?.section_name ? taskLabels[tid]?.section_name + ' - ' : '')}${(taskLabels[tid]?.description || tid)}`,
+                                description: (taskLabels[tid]?.description || tid),
                                 status: 'Pending' as const,
                               }))
                             }
+                            const pendingBySection: Record<string, string[]> = {}
+                            // Ensure a section entry exists for each form task even if none pending
+                            const allSectionNames = new Set<string>()
+                            for (const tid of form.task_ids) {
+                              const label = taskLabels[tid]
+                              const code = label?.section_name || ''
+                              const name = code ? (sectionDisplayMap[code] || code) : ''
+                              allSectionNames.add(name)
+                            }
+                            for (const name of allSectionNames) pendingBySection[name] = []
+                            for (const t of tasks) {
+                              const label = taskLabels[t.sub_task_id]
+                              const secCode = label?.section_name || ''
+                              const secName = secCode ? (sectionDisplayMap[secCode] || secCode) : ''
+                              pendingBySection[secName].push(t.description)
+                            }
+                            setPreviewPendingBySection(pendingBySection)
                             const preview: MyFormSubmission = {
                               id: Date.now(),
                               user_id: user.user_id,
@@ -301,22 +350,56 @@ export default function MyDashboard() {
         )}
         {submissionPreview && (
           <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50">
-            <div className="w-full max-w-lg bg-black border border-github-border rounded-xl p-6">
-              <h3 className="text-white text-lg mb-4">Form Preview — {submissionPreview.form_name}</h3>
-              <div className="space-y-3 text-sm text-gray-300">
-                <div>EDIPI: {submissionPreview.member.edipi}</div>
-                <div>Member: {[submissionPreview.member.rank, [submissionPreview.member.first_name, submissionPreview.member.last_name].filter(Boolean).join(' ')].filter(Boolean).join(' ')}</div>
-                <div>Unit: {submissionPreview.unit_id}</div>
-                <div>Company: {submissionPreview.member.company_id || ''}</div>
-              <div>Section: {sectionDisplay || submissionPreview.member.platoon_id || ''}</div>
+            <div className="w-full max-w-2xl bg-black border border-github-border rounded-xl p-6">
+              <h3 className="text-white text-lg mb-4">{submissionPreview.kind} — {submissionPreview.form_name}</h3>
+              <div className="grid grid-cols-2 gap-3 text-sm text-gray-300">
+                <div><span className="text-gray-400">EDIPI:</span> {submissionPreview.member.edipi}</div>
+                <div><span className="text-gray-400">Unit:</span> {submissionPreview.unit_id}</div>
+                <div className="col-span-2"><span className="text-gray-400">Member:</span> {[submissionPreview.member.rank, [submissionPreview.member.first_name, submissionPreview.member.last_name].filter(Boolean).join(' ')].filter(Boolean).join(' ')}</div>
+                <div><span className="text-gray-400">Company:</span> {submissionPreview.member.company_id || ''}</div>
+                <div><span className="text-gray-400">Section:</span> {sectionDisplay || submissionPreview.member.platoon_id || ''}</div>
               </div>
-              <div className="mt-4">
-                <h4 className="text-white text-sm mb-2">Pending Tasks</h4>
-                <ul className="space-y-2 text-sm text-gray-300 max-h-40 overflow-auto">
-                  {submissionPreview.tasks.length ? submissionPreview.tasks.map(t => (
-                    <li key={t.sub_task_id}>{t.description}</li>
-                  )) : (<li>None</li>)}
-                </ul>
+              <div className="mt-6 space-y-6">
+                <div>
+                  <h4 className="text-white text-sm mb-2">Pending</h4>
+                  {Object.keys(previewPendingBySection).length ? (
+                    <div className="space-y-4">
+                      {Object.entries(previewPendingBySection).map(([sec, items]) => (
+                        <div key={sec} className="border border-github-border rounded">
+                          <div className="px-3 py-2 border-b border-github-border text-white text-sm">{sec || 'Section'}</div>
+                          <ul className="p-3 space-y-1 text-sm text-gray-300">
+                            {items.map((d, i) => (<li key={`${sec}-${i}`}>{d}</li>))}
+                          </ul>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (<div className="text-gray-400 text-sm">None</div>)}
+                </div>
+                <div>
+                  <h4 className="text-white text-sm mb-2">Completed</h4>
+                  {previewCompletedRows.length ? (
+                    <table className="min-w-full text-sm">
+                      <thead className="text-gray-400">
+                        <tr>
+                          <th className="text-left p-2">Section</th>
+                          <th className="text-left p-2">Task</th>
+                          <th className="text-left p-2">Log</th>
+                          <th className="text-left p-2">When</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {previewCompletedRows.map((r, i) => (
+                          <tr key={`row-${i}`} className="border-t border-github-border text-gray-300">
+                            <td className="p-2">{r.section || ''}</td>
+                            <td className="p-2">{r.task}</td>
+                            <td className="p-2">{r.note || ''}</td>
+                            <td className="p-2">{r.at || ''}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  ) : (<div className="text-gray-400 text-sm">None</div>)}
+                </div>
               </div>
               <div className="mt-6 flex gap-2 justify-end">
                 <button
@@ -362,12 +445,14 @@ export default function MyDashboard() {
                     }
 
                     setSubmissionPreview(null)
+                    setPreviewPendingBySection({})
+                    setPreviewCompletedBySection({})
                   }}
                   className="px-4 py-2 bg-github-blue hover:bg-blue-600 text-white rounded"
                 >
                   Save
                 </button>
-                <button onClick={() => setSubmissionPreview(null)} className="px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded">Cancel</button>
+                <button onClick={() => { setSubmissionPreview(null); setPreviewPendingBySection({}); setPreviewCompletedBySection({}); }} className="px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded">Cancel</button>
               </div>
             </div>
           </div>

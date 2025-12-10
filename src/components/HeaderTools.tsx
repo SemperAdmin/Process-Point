@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { useAuthStore } from '@/stores/authStore'
 import { useEffect, useState } from 'react'
 import { getRoleOverride } from '@/utils/localUsersStore'
+import { sbListUnitAdmins } from '@/services/adminService'
 import { listSections } from '@/utils/unitStructure'
 
 export default function HeaderTools() {
@@ -10,6 +11,7 @@ export default function HeaderTools() {
   const { user, logout } = useAuthStore()
   const [open, setOpen] = useState(false)
   const [sectionLabel, setSectionLabel] = useState('')
+  const [isAssignedUnitAdmin, setIsAssignedUnitAdmin] = useState(false)
 
   useEffect(() => {
     const load = async () => {
@@ -27,6 +29,19 @@ export default function HeaderTools() {
     }
     load()
   }, [user?.unit_id, user?.platoon_id])
+
+  useEffect(() => {
+    const loadAdmins = async () => {
+      try {
+        const admins = await sbListUnitAdmins()
+        const ok = !!admins.find(a => a.admin_user_id === (user?.edipi || ''))
+        setIsAssignedUnitAdmin(ok)
+      } catch {
+        setIsAssignedUnitAdmin(false)
+      }
+    }
+    if (user?.edipi) loadAdmins()
+  }, [user?.edipi])
 
   const handleLogout = () => {
     logout()
@@ -53,7 +68,7 @@ export default function HeaderTools() {
                   App Admin
                 </button>
               )}
-              {((getRoleOverride(user?.edipi || '')?.org_role) === 'Unit_Admin' || user?.org_role === 'Unit_Admin') && (
+              {((getRoleOverride(user?.edipi || '')?.org_role) === 'Unit_Admin' || user?.org_role === 'Unit_Admin' || isAssignedUnitAdmin) && (
                 <button onMouseDown={() => { setOpen(false); navigate('/unit-admin') }} className="w-full flex items-center px-3 py-2 text-left hover:bg-gray-700 text-white">
                   <ListChecks className="w-5 h-5 mr-2" />
                   Unit Admin
