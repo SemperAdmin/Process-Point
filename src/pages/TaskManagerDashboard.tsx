@@ -2,13 +2,17 @@ import { useEffect, useMemo, useState } from 'react'
 import { useAuthStore } from '@/stores/authStore'
 import HeaderTools from '@/components/HeaderTools'
 import { googleMapsLink } from '@/utils/maps'
-import { fetchJson, LocalUserProfile, UsersIndexEntry, getChecklistByUnit, listMembers } from '@/services/localDataService'
+import { fetchJson, LocalUserProfile, UsersIndexEntry, getChecklistByUnit, listMembers, getProgressByMember } from '@/services/localDataService'
 import { sbListUsers, sbListSubmissionsByUnit } from '@/services/supabaseDataService'
 import { listSections } from '@/utils/unitStructure'
 import { listSubTasks, createSubTask, updateSubTask, deleteSubTask, UnitSubTask } from '@/utils/unitTasks'
  
 import { listForms } from '@/utils/formsStore'
 import { supabase } from '@/services/supabaseClient'
+import { canonicalize } from '@/utils/json'
+import { sha256String } from '@/utils/crypto'
+import { sbUpsertProgress } from '@/services/supabaseDataService'
+import { triggerUpdateProgressDispatch } from '@/services/workflowService'
 
 export default function TaskManagerDashboard() {
   const { user } = useAuthStore()
@@ -54,6 +58,11 @@ export default function TaskManagerDashboard() {
   const [refreshKey, setRefreshKey] = useState(0)
   const [taskFilterText, setTaskFilterText] = useState('')
   const [taskFilterKind, setTaskFilterKind] = useState<'All' | 'Text' | 'Date' | 'Options'>('All')
+  const [actionOpen, setActionOpen] = useState(false)
+  const [actionMemberId, setActionMemberId] = useState<string | null>(null)
+  const [actionSubTaskId, setActionSubTaskId] = useState<string | null>(null)
+  const [actionCompletionValue, setActionCompletionValue] = useState<string>('')
+  const [actionSectionInstructions, setActionSectionInstructions] = useState<string>('')
 
   useEffect(() => {
     if (!user || !user.unit_id) return
@@ -412,14 +421,27 @@ export default function TaskManagerDashboard() {
                                 const edipi = m?.edipi || mid
                                 const company = m?.company_id || ''
                                 return (
-                                  <tr key={`bytask-${subTaskId}-${mid}`} className="border-t border-github-border text-gray-300">
+                                  <tr
+                                    key={`bytask-${subTaskId}-${mid}`}
+                                    className="border-t border-github-border text-gray-300 cursor-pointer"
+                                    onClick={() => {
+                                      setActionSubTaskId(subTaskId)
+                                      setActionMemberId(mid)
+                                      const unitKey = (user?.unit_id || '').includes('-') ? (user?.unit_id as string).split('-')[1] : (user?.unit_id as string)
+                                      const sid = subTaskMap[subTaskId]?.section_id
+                                      const key = sid ? `section_instructions:${unitKey}:${sid}` : ''
+                                      try { setActionSectionInstructions(key ? (localStorage.getItem(key) || '') : '') } catch { setActionSectionInstructions('') }
+                                      setActionCompletionValue('')
+                                      setActionOpen(true)
+                                    }}
+                                  >
                                     <td className="p-2">{formNameByTask[subTaskId] || 'Inbound'}</td>
                                     <td className="p-2">{memberDisp}</td>
                                     <td className="p-2">{edipi}</td>
                                     <td className="p-2">{company}</td>
                                     <td className="p-2">{secDisplay}</td>
                                   </tr>
-                              )
+                                )
                             })}
                           </tbody>
                           
@@ -734,6 +756,103 @@ export default function TaskManagerDashboard() {
                           }
                         }} className="px-4 py-2 bg-github-blue hover:bg-blue-600 text-white rounded">Save</button>
                         <button onClick={() => { setCreateOpen(false); setEditingTaskId(null) }} className="px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded">Cancel</button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {actionOpen && (
+                  <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50">
+                    <div className="w-full max-w-xl bg-black border border-github-border rounded-xl p-6">
+                      <h3 className="text-white text-lg mb-4">Task Manager Action</h3>
+                      <div className="grid grid-cols-1 gap-3 text-sm">
+                        <div className="text-gray-300">
+                          {(() => {
+                            const m = actionMemberId ? memberMap[actionMemberId] : undefined
+                            const name = m ? [m.rank, [m.first_name, m.last_name].filter(Boolean).join(' ')].filter(Boolean).join(' ') : ''
+                            const edipi = m?.edipi || ''
+                            const comp = m?.company_id || ''
+                            const secKey = m?.platoon_id ? String(m.platoon_id) : ''
+                            const secLabel = secKey ? (sectionDisplayMap[secKey] || secKey) : ''
+                            return (
+                              <div className="grid grid-cols-4 gap-3">
+                                <div><span className="text-gray-400">Member:</span> {name}</div>
+                                <div><span className="text-gray-400">EDIPI:</span> {edipi}</div>
+                                <div><span className="text-gray-400">Company:</span> {comp}</div>
+                                <div><span className="text-gray-400">Section:</span> {secLabel}</div>
+                              </div>
+                            )
+                          })()}
+                        </div>
+                        <div className="text-gray-300">
+                          <div className="mb-1"><span className="text-gray-400">Section Instructions:</span></div>
+                          <div className="px-3 py-2 bg-github-gray bg-opacity-20 border border-github-border rounded text-white whitespace-pre-wrap">{actionSectionInstructions || 'None'}</div>
+                        </div>
+                        <div className="text-gray-300">
+                          {(() => {
+                            const st = actionSubTaskId ? subTaskMap[actionSubTaskId] : undefined
+                            const kind = st?.completion_kind || ''
+                            const label = st?.completion_label || ''
+                            const opts = (st?.completion_options || [])
+                            return (
+                              <div className="grid grid-cols-1 gap-2">
+                                <div className="text-gray-400">{[kind, label].filter(Boolean).join(' • ')}</div>
+                                {kind === 'Date' ? (
+                                  <input type="date" value={actionCompletionValue} onChange={e => setActionCompletionValue(e.target.value)} className="px-3 py-2 bg-github-gray bg-opacity-20 border border-github-border rounded text-white" />
+                                ) : kind === 'Options' ? (
+                                  <select value={actionCompletionValue} onChange={e => setActionCompletionValue(e.target.value)} className="px-3 py-2 bg-github-gray bg-opacity-20 border border-github-border rounded text-white">
+                                    <option value="">Select</option>
+                                    {opts.map(o => (<option key={o} value={o}>{o}</option>))}
+                                  </select>
+                                ) : (
+                                  <input value={actionCompletionValue} onChange={e => setActionCompletionValue(e.target.value)} placeholder="Enter value" className="px-3 py-2 bg-github-gray bg-opacity-20 border border-github-border rounded text-white" />
+                                )}
+                              </div>
+                            )
+                          })()}
+                        </div>
+                        {actionMsg && <div className="text-red-400 text-sm">{actionMsg}</div>}
+                      </div>
+                      <div className="mt-6 flex gap-2 justify-end">
+                        <button onClick={async () => {
+                          setActionMsg('')
+                          try {
+                            if (!user || !actionMemberId || !actionSubTaskId) throw new Error('Missing selection')
+                            const checklist = await getChecklistByUnit(user.unit_id)
+                            const taskDef = checklist.sections.flatMap(s => s.sub_tasks).find(st => st.sub_task_id === actionSubTaskId)
+                            if (actionMemberId === user.user_id && taskDef && (taskDef.responsible_user_id || []).includes(user.user_id)) throw new Error('Cannot sign-off your own task when you are the POC')
+                            const progress = await getProgressByMember(actionMemberId)
+                            const currentSha = progress.current_file_sha
+                            const computedSha = await sha256String(canonicalize(progress))
+                            if (currentSha !== computedSha) throw new Error('Conflict detected. Please refresh progress data.')
+                            const now = new Date().toISOString()
+                            const idx = progress.progress_tasks.findIndex(t => t.sub_task_id === actionSubTaskId)
+                            if (idx === -1) progress.progress_tasks.push({ sub_task_id: actionSubTaskId, status: 'Cleared', cleared_by_user_id: user.user_id, cleared_at_timestamp: now })
+                            else {
+                              progress.progress_tasks[idx].status = 'Cleared'
+                              ;(progress.progress_tasks[idx] as any).cleared_by_user_id = user.user_id
+                              ;(progress.progress_tasks[idx] as any).cleared_at_timestamp = now
+                            }
+                            const newCanonical = canonicalize(progress)
+                            const newSha = await sha256String(newCanonical)
+                            progress.current_file_sha = newSha
+                            if (import.meta.env.VITE_USE_SUPABASE === '1') {
+                              try { await sbUpsertProgress(progress) } catch (err) { throw err }
+                            } else {
+                              try { await triggerUpdateProgressDispatch({ progress }) } catch (err) { throw err }
+                            }
+                            try { window.dispatchEvent(new CustomEvent('progress-updated', { detail: { member_user_id: actionMemberId } })) } catch {}
+                            setActionOpen(false)
+                            setActionMemberId(null)
+                            setActionSubTaskId(null)
+                            setActionCompletionValue('')
+                            setActionSectionInstructions('')
+                            setRefreshKey(k => k + 1)
+                          } catch (err: any) {
+                            setActionMsg(err?.message || 'Failed to save')
+                          }
+                        }} className="px-4 py-2 bg-github-blue hover:bg-blue-600 text-white rounded">Save</button>
+                        <button onClick={() => { setActionOpen(false); setActionMemberId(null); setActionSubTaskId(null); setActionCompletionValue(''); setActionSectionInstructions('') }} className="px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded">Cancel</button>
                       </div>
                     </div>
                   </div>
