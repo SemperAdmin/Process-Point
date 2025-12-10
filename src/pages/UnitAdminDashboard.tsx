@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react'
 import { useAuthStore } from '@/stores/authStore'
 import { listSubTasks, createSubTask, deleteSubTask, updateSubTask } from '@/utils/unitTasks'
 import { listForms, createForm, deleteForm, updateForm, UnitForm, UnitFormPurpose } from '@/utils/formsStore'
+import { createSubmission } from '@/utils/myFormSubmissionsStore'
+import { sbCreateSubmission } from '@/services/supabaseDataService'
 import { listSections, createSection, deleteSection, listCompanies, createCompany, deleteCompany, updateSection, UnitSection, UnitCompany } from '@/utils/unitStructure'
 import HeaderTools from '@/components/HeaderTools'
 import { googleMapsLink } from '@/utils/maps'
@@ -984,6 +986,35 @@ export default function UnitAdminDashboard() {
                                 await updateForm(unitId, editingFormId, { name: newFormName.trim(), kind: newFormKind, task_ids: newFormTaskIds, purpose: newFormPurpose })
                               } else {
                                 await createForm(unitId, newFormName.trim(), newFormKind, newFormTaskIds, newFormPurpose)
+                                try {
+                                  const all = await listForms(unitId)
+                                  const just = all.find(f => f.name === newFormName.trim() && f.kind === newFormKind)
+                                  if (just) {
+                                    for (const ed of defaultEdipis) {
+                                      const p = edipiMap[ed]
+                                      if (!p) continue
+                                      const tasks = (just.task_ids || []).map(tid => ({ sub_task_id: tid, description: String(tid), status: 'Pending' as const }))
+                                      const payload = {
+                                        user_id: p.user_id,
+                                        unit_id: p.unit_id,
+                                        form_id: just.id,
+                                        form_name: just.name,
+                                        kind: just.kind,
+                                        member: { edipi: p.edipi, rank: p.rank, first_name: p.first_name, last_name: p.last_name, company_id: p.company_id, platoon_id: p.platoon_id },
+                                        tasks,
+                                        arrival_date: just.kind === 'Inbound' ? new Date().toISOString().slice(0,10) : undefined,
+                                        departure_date: just.kind === 'Outbound' ? new Date().toISOString().slice(0,10) : undefined,
+                                      }
+                                      try {
+                                        if (import.meta.env.VITE_USE_SUPABASE === '1') {
+                                          await sbCreateSubmission(payload as any)
+                                        } else {
+                                          await createSubmission(payload as any)
+                                        }
+                                      } catch {}
+                                    }
+                                  }
+                                } catch {}
                               }
                               setForms(await listForms(unitId))
                               setCreateModalOpen(false)
