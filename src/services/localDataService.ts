@@ -1,4 +1,3 @@
-import bcrypt from 'bcryptjs'
 import { sbGetUserByEdipi, sbVerifyPassword, sbGetProgressByMember, sbListMembers } from './supabaseDataService'
 
 export interface LocalUserProfile {
@@ -80,6 +79,8 @@ export const getUserByEdipi = async (edipi: string): Promise<LocalUserProfile | 
 
 export const verifyPassword = async (plain: string, hashed: string): Promise<boolean> => {
   if (import.meta.env.VITE_USE_SUPABASE === '1') return sbVerifyPassword(plain, hashed)
+  const mod = await import('bcryptjs')
+  const bcrypt = (mod as any).default || mod
   return bcrypt.compare(plain, hashed)
 }
 
@@ -151,7 +152,11 @@ export const getProgressByMember = async (memberUserId: string): Promise<MemberP
 
 export const listMembers = async (): Promise<{ member_user_id: string; unit_id: string }[]> => {
   if (import.meta.env.VITE_USE_SUPABASE === '1') {
-    return await sbListMembers()
+    try {
+      return await sbListMembers()
+    } catch {
+      // Fallback to JSON files if Supabase is unreachable
+    }
   }
   // Fallback to JSON files for demo mode
   const index = await fetchJson<{ members: { member_user_id: string; unit_id: string }[] }>(`/data/members/index.json`)

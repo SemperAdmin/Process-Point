@@ -1,5 +1,4 @@
 import { supabase } from './supabaseClient'
-import bcrypt from 'bcryptjs'
 import { LocalUserProfile, MemberProgress } from './localDataService'
 import type { UnitForm } from '@/utils/formsStore'
 import type { MyItem } from '@/utils/myItemsStore'
@@ -17,6 +16,8 @@ export const sbGetUserByEdipi = async (edipi: string): Promise<LocalUserProfile 
 }
 
 export const sbVerifyPassword = async (plain: string, hashed: string): Promise<boolean> => {
+  const mod = await import('bcryptjs')
+  const bcrypt = (mod as any).default || mod
   return bcrypt.compare(plain, hashed)
 }
 
@@ -176,6 +177,31 @@ export const sbListSubmissionsByUnit = async (unit_id: string): Promise<MyFormSu
     .select('*')
     .eq('unit_id', unit_id)
     .order('created_at', { ascending: false })
+  if (error) throw error
+  return (data as any) || []
+}
+
+export const sbListInboundSubmissionsByPlatoon = async (
+  unit_id: string,
+  platoon_id: string
+): Promise<MyFormSubmission[]> => {
+  const { data, error } = await supabase
+    .from('my_form_submissions')
+    .select('*')
+    .eq('unit_id', unit_id)
+    .eq('kind', 'Inbound')
+    .order('created_at', { ascending: false })
+  if (error) throw error
+  return (data as any) || []
+}
+
+export const sbListMemberFormCompletion = async (
+  member_user_id: string
+): Promise<Array<{ member_user_id: string; unit_id: string; form_id: number; form_name: string; kind: 'Inbound' | 'Outbound'; total_count: number; cleared_count: number; status: 'In_Progress' | 'Completed' }>> => {
+  const { data, error } = await supabase
+    .from('member_form_completion')
+    .select('*')
+    .eq('member_user_id', member_user_id)
   if (error) throw error
   return (data as any) || []
 }

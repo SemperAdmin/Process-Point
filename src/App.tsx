@@ -16,8 +16,8 @@ function App() {
   const { isAuthenticated } = useAuthStore()
 
   return (
-    <Router basename={import.meta.env.BASE_URL}>
-      <div className="min-h-screen bg-github-dark text-white">
+    <Router basename={import.meta.env.BASE_URL} future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+      <div className="min-h-screen bg-github-dark text_white">
         <Routes>
           <Route path="/" element={isAuthenticated ? <MyDashboard /> : <LandingPage />} />
           <Route path="/dashboard" element={<Dashboard />} />

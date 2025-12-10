@@ -10,8 +10,8 @@ export default function BrandMark() {
     `${base}logo.png`,
     `/assets/images/logo.png`,
     `/logo.png`,
-    `${base}vite.svg`,
-    `/vite.svg`,
+    `${base}logo.png`,
+    `/logo.pngg`,
   ], [base])
   const [idx, setIdx] = useState(0)
   const src = candidates[idx] || candidates[0]

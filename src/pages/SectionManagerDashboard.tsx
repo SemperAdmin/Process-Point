@@ -3,7 +3,7 @@ import { useAuthStore } from '@/stores/authStore'
 import HeaderTools from '@/components/HeaderTools'
 import BrandMark from '@/components/BrandMark'
 import { fetchJson, LocalUserProfile, UsersIndexEntry, getChecklistByUnit, getProgressByMember } from '@/services/localDataService'
-import { sbListUsers, sbListSubmissionsByUnit } from '@/services/supabaseDataService'
+import { sbListUsers, sbListSubmissionsByUnit, sbListMemberFormCompletion, sbListInboundSubmissionsByPlatoon } from '@/services/supabaseDataService'
 import { listPendingForSectionManager, listArchivedForUser } from '@/services/localDataService'
 import { getRoleOverride } from '@/utils/localUsersStore'
 import { normalizeOrgRole, normalizeSectionRole } from '@/utils/roles'
@@ -23,6 +23,7 @@ export default function SectionManagerDashboard() {
   const [sectionDisplayMap, setSectionDisplayMap] = useState<Record<string, string>>({})
   const [taskLabels, setTaskLabels] = useState<Record<string, { section_name: string; description: string }>>({})
   const [latestInboundMap, setLatestInboundMap] = useState<Record<string, any>>({})
+  const [sectionFormStatus, setSectionFormStatus] = useState<Array<{ user_id: string; edipi?: string; form_name: string; kind: 'Inbound' | 'Outbound'; total: number; cleared: number; status: 'In_Progress' | 'Completed'; created_at?: string; arrival_date?: string; departure_date?: string }>>([])
   const [previewSubmission, setPreviewSubmission] = useState<any | null>(null)
   const [previewPendingBySection, setPreviewPendingBySection] = useState<Record<string, string[]>>({})
   const [previewCompletedRows, setPreviewCompletedRows] = useState<Array<{ section: string; task: string; note?: string; at?: string }>>([])
@@ -58,8 +59,8 @@ export default function SectionManagerDashboard() {
       let formsLocal: Array<{ user_id: string; edipi?: string; name: string; kind: string; created_at?: string }> = []
       try {
         if (import.meta.env.VITE_USE_SUPABASE === '1') {
-          const submissions = await sbListSubmissionsByUnit(user.unit_id)
           const mySectionKey = String(user.platoon_id || '')
+          const submissions = await sbListInboundSubmissionsByPlatoon(user.unit_id, mySectionKey)
           const forms = submissions
             .filter(s => {
               const p = map[s.user_id]
@@ -82,15 +83,41 @@ export default function SectionManagerDashboard() {
             if (!cur || String(curAt) < String(s.created_at || '')) latest[s.user_id] = s
           }
           setLatestInboundMap(latest)
+
+          // Build section form status rows directly from inbound submissions
+          try {
+            const rows: Array<{ user_id: string; edipi?: string; form_name: string; kind: 'Inbound' | 'Outbound'; total: number; cleared: number; status: 'In_Progress' | 'Completed'; created_at?: string; arrival_date?: string; departure_date?: string }> = []
+            for (const s of submissions) {
+              const ids = Array.isArray((s as any).task_ids) ? ((s as any).task_ids || []) : ((s.tasks || []).map((t: any) => t.sub_task_id))
+              const total = (s as any).total_count ?? ids.length
+              const cleared = (s as any).completed_count ?? 0
+              const status: 'In_Progress' | 'Completed' = total > 0 && cleared === total ? 'Completed' : 'In_Progress'
+              rows.push({
+                user_id: s.user_id,
+                edipi: map[s.user_id]?.edipi,
+                form_name: s.form_name,
+                kind: s.kind as any,
+                total,
+                cleared,
+                status,
+                created_at: s.created_at,
+                arrival_date: (s as any)?.arrival_date,
+                departure_date: (s as any)?.departure_date,
+              })
+            }
+            setSectionFormStatus(rows)
+          } catch {}
         } else {
           formsLocal = []
           setSectionForms(formsLocal)
           setLatestInboundMap({})
+          setSectionFormStatus([])
         }
       } catch (error) {
         formsLocal = []
         setSectionForms(formsLocal)
         setLatestInboundMap({})
+        setSectionFormStatus([])
         console.error('Failed to load section forms:', error)
       }
       const secs = await listSections(user.unit_id)
@@ -115,9 +142,13 @@ export default function SectionManagerDashboard() {
       } catch {}
 
       const mySecKey = String(user.platoon_id || '')
-      const sectionMemberIds = Object.values(map)
+      const idsFromMap2 = Object.values(map)
         .filter(p => p.unit_id === user.unit_id && (mySecKey ? String(p.platoon_id || '') === mySecKey : true))
         .map(p => p.user_id)
+      const idsFromForms = (formsLocal || [])
+        .filter(f => f.kind === 'Inbound')
+        .map(f => f.user_id)
+      const sectionMemberIds = Array.from(new Set([...idsFromMap2, ...idsFromForms]))
       const inboundFromProgress = new Set(pending.filter(it => sectionMemberIds.includes(it.member_user_id)).map(it => it.member_user_id))
       const inboundFromForms = new Set((formsLocal || []).filter(f => f.kind === 'Inbound').map(f => f.user_id))
       const inboundFromItems = new Set<string>()
@@ -148,8 +179,7 @@ export default function SectionManagerDashboard() {
           detailMap[mid] = { items: 0, forms: formsCount, pending: pendingCount, lastForm, lastFormName, lastFormKind, lastFormCreatedAt }
         }
       }
-      const union = Array.from(new Set<string>([...Array.from(inboundFromProgress), ...Array.from(inboundFromForms), ...Array.from(inboundFromItems)]))
-      setInboundMembers(union)
+      setInboundMembers(sectionMemberIds)
       setInboundSourceMap(detailMap)
     }
     load()
@@ -201,45 +231,45 @@ export default function SectionManagerDashboard() {
             {tab === 'inbound' && (
               <div className="space-y-6">
                 <div className="text-gray-300">Pending tasks assigned to your section</div>
+
                 <table className="min-w-full text-sm">
                   <thead className="text-gray-400">
                     <tr>
                       <th className="text-left p-2">Member</th>
                       <th className="text-left p-2">EDIPI</th>
-                      <th className="text-left p-2">Pending</th>
                       <th className="text-left p-2">Form</th>
                       <th className="text-left p-2">Type</th>
-                      <th className="text-left p-2">Created At</th>
+                      <th className="text-left p-2">Done/Total</th>
+                      <th className="text-left p-2">Status</th>
+                      <th className="text-left p-2">Arrival</th>
                       <th className="text-left p-2">View</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {inboundMembers.map(mid => {
-                      const m = memberMap[mid]
-                      const name = m ? [m.first_name, m.last_name].filter(Boolean).join(' ') : mid
-                      const d = inboundSourceMap[mid] || { items: 0, forms: 0, pending: 0, lastForm: '', lastFormName: '', lastFormKind: '', lastFormCreatedAt: '' }
-                      const edipi = m?.edipi || ''
-                      const latest = latestInboundMap[mid]
+                    {sectionFormStatus.filter(row => row.kind === 'Inbound' && row.status !== 'Completed').map(row => {
+                      const m = memberMap[row.user_id]
+                      const name = m ? [m.first_name, m.last_name].filter(Boolean).join(' ') : row.user_id
                       return (
-                        <tr key={mid} className="border-t border-github-border text-gray-300">
-                          <td className="p-2">{name}</td>
-                          <td className="p-2">{edipi}</td>
-                          <td className="p-2">{d.pending}</td>
-                          <td className="p-2">{d.lastFormName || '—'}</td>
-                          <td className="p-2">{d.lastFormKind || '—'}</td>
-                          <td className="p-2">{d.lastFormCreatedAt || '—'}</td>
+                        <tr key={`${row.user_id}-${row.form_name}-${row.created_at}`} className="border-t border-github-border text-gray-300">
+                          <td className="p-2">{[m?.rank, name].filter(Boolean).join(' ')}</td>
+                          <td className="p-2">{m?.edipi || ''}</td>
+                          <td className="p-2">{row.form_name}</td>
+                          <td className="p-2">{row.kind}</td>
+                          <td className="p-2">{`${row.cleared}/${row.total}`}</td>
+                          <td className="p-2">{row.status}</td>
+                          <td className="p-2">{row.kind === 'Inbound' ? (row.arrival_date || '') : (row.departure_date || '')}</td>
                           <td className="p-2">
                             <button
                               className="px-3 py-1 bg-github-blue hover:bg-blue-600 text-white rounded text-xs"
                               onClick={async () => {
-                                const progress = await getProgressByMember(mid)
-                                const pendingSet = new Set(progress.progress_tasks.filter(t => t.status === 'Pending').map(t => t.sub_task_id))
+                                const progress = await getProgressByMember(row.user_id)
+                                const pendingSet = new Set(progress.progress_tasks.filter(t => t.status !== 'Cleared').map(t => t.sub_task_id))
                                 const completedSet = new Set(progress.progress_tasks.filter(t => t.status === 'Cleared').map(t => t.sub_task_id))
-                                const formName = d.lastFormName || latest?.form_name || 'Inbound'
-                                const kind = 'Inbound'
-                                const createdAt = d.lastFormCreatedAt || latest?.created_at || ''
+                                const formName = row.form_name
+                                const kind = row.kind
+                                const createdAt = row.created_at || ''
                                 const member = { edipi: m?.edipi || '', rank: m?.rank, first_name: m?.first_name, last_name: m?.last_name, company_id: m?.company_id, platoon_id: m?.platoon_id }
-                                const tasksIds = Array.from(new Set([...(latest?.tasks || []).map((t: any) => t.sub_task_id)]))
+                                const tasksIds = (latestInboundMap[row.user_id]?.tasks || []).map((t: any) => t.sub_task_id)
                                 const pendingBySection: Record<string, string[]> = {}
                                 const allSectionNames = new Set<string>()
                                 for (const tid of tasksIds) {
@@ -268,30 +298,12 @@ export default function SectionManagerDashboard() {
                                   completedRows.push({ section: secName, task: (label?.description || tid), note: lastLog?.note, at: lastLog?.at })
                                 }
                                 setPreviewCompletedRows(completedRows)
-                                setPreviewSubmission({ user_id: mid, unit_id: user.unit_id, form_name: formName, kind, created_at: createdAt, member })
+                                setPreviewSubmission({ user_id: row.user_id, unit_id: user.unit_id, form_name: formName, kind, created_at: createdAt, member })
                               }}
                             >
                               View
                             </button>
                           </td>
-                        </tr>
-                      )
-                    })}
-                  </tbody>
-                </table>
-
-                <table className="min-w-full text-sm">
-                  <tbody>
-                    {(sectionForms || []).filter(row => row.kind === 'Inbound').map(row => {
-                      const m = memberMap[row.user_id]
-                      const name = m ? [m.first_name, m.last_name].filter(Boolean).join(' ') : row.user_id
-                      return (
-                        <tr key={`${row.user_id}-${row.name}-${row.created_at}`} className="border-t border-github-border text-gray-300">
-                          <td className="p-2">{[m?.rank, name].filter(Boolean).join(' ')}</td>
-                          <td className="p-2">{row.edipi || ''}</td>
-                          <td className="p-2">{row.name}</td>
-                          <td className="p-2">{row.kind}</td>
-                          <td className="p-2">{row.created_at || ''}</td>
                         </tr>
                       )
                     })}

@@ -1,5 +1,4 @@
 import { useEffect, useState } from 'react'
-import bcrypt from 'bcryptjs'
 import { useNavigate } from 'react-router-dom'
 import { useAuthStore } from '@/stores/authStore'
 import { canonicalize } from '@/utils/json'
@@ -73,6 +72,8 @@ export default function Register() {
     setBusy(true)
     try {
       const userId = String(Date.now())
+      const mod = await import('bcryptjs')
+      const bcrypt = (mod as any).default || mod
       const hashed = await bcrypt.hash(password, 12)
       const now = new Date().toISOString()
       const userProfile = {
@@ -215,7 +216,9 @@ export default function Register() {
     setBusy(true)
     try {
       const userId = String(Date.now())
-      const hashed = await bcrypt.hash(password, 12)
+      const mod2 = await import('bcryptjs')
+      const bcrypt2 = (mod2 as any).default || mod2
+      const hashed = await bcrypt2.hash(password, 12)
       const now = new Date().toISOString()
       const userProfile = {
         user_id: userId,

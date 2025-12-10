@@ -142,31 +142,37 @@ export default function TaskManagerDashboard() {
       const outboundByTask: Record<string, Set<string>> = {}
       for (const m of members.filter(m => m.unit_id === user.unit_id)) {
         const progress = await getProgressByMember(m.member_user_id)
-        if (import.meta.env.VITE_USE_SUPABASE === '1' && (progress.progress_tasks || []).length === 0) {
+        let tasks = progress.progress_tasks || []
+        if (tasks.length === 0) {
           const toSeed = Array.from(sectionTaskIds)
           if (toSeed.length) {
-            const seeded = {
-              member_user_id: m.member_user_id,
-              unit_id: user.unit_id,
-              official_checkin_timestamp: progress.official_checkin_timestamp || new Date().toISOString(),
-              current_file_sha: '',
-              progress_tasks: toSeed.map(id => ({ sub_task_id: id, status: 'Pending' as const })),
+            // Use in-memory seeded tasks for grouping; attempt Supabase write but don’t depend on it
+            tasks = toSeed.map(id => ({ sub_task_id: id, status: 'Pending' as const }))
+            if (import.meta.env.VITE_USE_SUPABASE === '1') {
+              const seeded = {
+                member_user_id: m.member_user_id,
+                unit_id: user.unit_id,
+                official_checkin_timestamp: progress.official_checkin_timestamp || new Date().toISOString(),
+                current_file_sha: '',
+                progress_tasks: tasks,
+              }
+              const canon = canonicalize(seeded)
+              const sha = await sha256String(canon)
+              seeded.current_file_sha = sha
+              try { await sbUpsertProgress(seeded as any) } catch {}
             }
-            const canon = canonicalize(seeded)
-            const sha = await sha256String(canon)
-            seeded.current_file_sha = sha
-            try { await sbUpsertProgress(seeded as any) } catch (err) { console.error(err) }
           }
         }
-        for (const t of progress.progress_tasks) {
+        for (const t of tasks) {
           if (responsibleSet.has(t.sub_task_id)) {
             const subId = t.sub_task_id
             if (t.status === 'Pending') {
-              if (sectionTaskIds.has(subId) && inboundTaskIds.has(subId)) {
+              const inScope = sectionTaskIds.has(subId) || (sectionPrefix ? String(subId).startsWith(`${sectionPrefix}-`) : false)
+              if (inScope && inboundTaskIds.has(subId)) {
                 if (!inboundByTask[subId]) inboundByTask[subId] = new Set()
                 inboundByTask[subId].add(m.member_user_id)
               }
-              if (sectionTaskIds.has(subId) && outboundTaskIds.has(subId)) {
+              if (inScope && outboundTaskIds.has(subId)) {
                 if (!outboundByTask[subId]) outboundByTask[subId] = new Set()
                 outboundByTask[subId].add(m.member_user_id)
               }

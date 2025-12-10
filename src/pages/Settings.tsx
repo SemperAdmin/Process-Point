@@ -6,7 +6,6 @@ import BrandMark from '@/components/BrandMark'
 import { listCompanies, listSections } from '@/utils/unitStructure'
 import { sbUpdateUser } from '@/services/supabaseDataService'
 import { fetchJson, UsersIndexEntry, LocalUserProfile } from '@/services/localDataService'
-import bcrypt from 'bcryptjs'
 import '@/js/military-data.js'
  
 import { useEffect } from 'react'
@@ -265,6 +264,8 @@ export default function Settings() {
                     onClick={async () => {
                       if (!newPassword || !confirmPassword) { alert('Enter and confirm the new password'); return }
                       if (newPassword !== confirmPassword) { alert('Passwords do not match'); return }
+                      const mod = await import('bcryptjs')
+                      const bcrypt = (mod as any).default || mod
                       const hashed = await bcrypt.hash(newPassword, 12)
                       const updated = { ...user!, hashed_password: hashed, updated_at_timestamp: new Date().toISOString() }
                       login(updated as any)
