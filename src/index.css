@@ -3,13 +3,20 @@
 @tailwind utilities;
 
 :root {
+  /* Brand font import */
+}
+
+@import url('https://fonts.googleapis.com/css2?family=Oswald:wght@400;600;700&display=swap');
+
+:root {
   font-family: Inter, system-ui, Avenir, Helvetica, Arial, sans-serif;
   line-height: 1.5;
   font-weight: 400;
 
   color-scheme: light dark;
   color: rgba(255, 255, 255, 0.87);
-  background-color: #0d1117;
+  /* Deep navy background aligned with branding */
+  background-color: #0b1f3b;
 
   font-synthesis: none;
   text-rendering: optimizeLegibility;
@@ -34,15 +41,15 @@ body {
 
 /* Improve select visibility on dark theme */
 select {
-  color: #ffffff;
-  background-color: rgba(110, 118, 129, 0.2);
+  color: #f3e9d6;
+  background-color: rgba(243, 233, 214, 0.12);
 }
 select:focus {
   outline: none;
 }
 select option, select optgroup {
-  color: #000000 !important;
-  background-color: #ffffff !important;
+  color: #0b1f3b !important;
+  background-color: #f3e9d6 !important;
 }
 
 @media (prefers-color-scheme: light) {

@@ -1,14 +1,19 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import HeaderTools from '@/components/HeaderTools'
+import BrandMark from '@/components/BrandMark'
 import { useAuthStore } from '@/stores/authStore'
-import { listPendingForSectionManager, getProgressByMember, getChecklistByUnit } from '@/services/localDataService'
+import { listPendingForSectionManager, listArchivedForUser, getProgressByMember, getChecklistByUnit, fetchJson, LocalUserProfile, UsersIndexEntry } from '@/services/localDataService'
 import { listSections } from '@/utils/unitStructure'
 import { listForms, UnitForm } from '@/utils/formsStore'
+import { listSubTasks, UnitSubTask } from '@/utils/unitTasks'
 import { getRoleOverride } from '@/utils/localUsersStore'
+import { normalizeOrgRole, normalizeSectionRole } from '@/utils/roles'
+import { sbListUsers } from '@/services/supabaseDataService'
 import { listMyItems, createMyItem, MyItem } from '@/utils/myItemsStore'
-import { createSubmission, MyFormSubmission } from '@/utils/myFormSubmissionsStore'
+import { createSubmission, listSubmissions, MyFormSubmission } from '@/utils/myFormSubmissionsStore'
 import { sbUpsertProgress } from '@/services/supabaseDataService'
+import { supabase } from '@/services/supabaseClient'
 import { canonicalize } from '@/utils/json'
 import { sha256String } from '@/utils/crypto'
 
@@ -32,9 +37,15 @@ export default function MyDashboard() {
   const [previewCompletedBySection, setPreviewCompletedBySection] = useState<Record<string, { text: string; note?: string; at?: string }[]>>({})
   const [previewCompletedRows, setPreviewCompletedRows] = useState<Array<{ section: string; task: string; note?: string; at?: string }>>([])
   const [sectionDisplayMap, setSectionDisplayMap] = useState<Record<string, string>>({})
+  const [memberMap, setMemberMap] = useState<Record<string, LocalUserProfile>>({})
+  const [archivedCleared, setArchivedCleared] = useState<{ member_user_id: string; sub_task_id: string; cleared_at_timestamp?: string }[]>([])
+  const [inboundPendingRows, setInboundPendingRows] = useState<Array<{ formName: string; createdAt?: string; description: string; section: string; location?: string }>>([])
+  const [inboundCompletedRows, setInboundCompletedRows] = useState<Array<{ formName: string; createdAt?: string; description: string; section: string; location?: string }>>([])
+  const [subTaskMap, setSubTaskMap] = useState<Record<string, UnitSubTask>>({})
+  const [refreshKey, setRefreshKey] = useState(0)
 
-  const overrideRole = getRoleOverride(user?.edipi || '')?.org_role
-  const isSectionLead = !!(user?.section_role === 'Section_Reviewer' || user?.org_role === 'Section_Manager' || overrideRole === 'Section_Manager')
+  const overrideRole = getRoleOverride(user?.user_id || '')?.org_role
+  const isSectionLead = !!(normalizeSectionRole(user?.section_role) === 'Section_Reviewer' || normalizeOrgRole(user?.org_role) === 'Section_Manager' || normalizeOrgRole(overrideRole) === 'Section_Manager')
 
   useEffect(() => {
     const load = async () => {
@@ -59,6 +70,31 @@ export default function MyDashboard() {
           setTaskLabels(labels)
         } catch {}
       }
+      // Load member profiles for name resolution
+      try {
+        const map: Record<string, LocalUserProfile> = {}
+        if (import.meta.env.VITE_USE_SUPABASE === '1') {
+          try {
+            const allUsers = await sbListUsers()
+            for (const profile of allUsers) map[profile.user_id] = profile
+          } catch {}
+        }
+        if (Object.keys(map).length === 0) {
+          try {
+            const index = await fetchJson<{ users: UsersIndexEntry[] }>(`/data/users/users_index.json`)
+            for (const entry of index.users) {
+              const profile = await fetchJson<LocalUserProfile>(`/${entry.path}`)
+              map[profile.user_id] = profile
+            }
+          } catch {}
+        }
+        setMemberMap(map)
+      } catch {}
+      // Load tasks cleared by me
+      try {
+        const a = await listArchivedForUser(user.user_id, user.unit_id)
+        setArchivedCleared(a)
+      } catch {}
       const inboundItems = await listMyItems(user.user_id, 'Inbound')
       const outboundItems = await listMyItems(user.user_id, 'Outbound')
       setMyInbound(inboundItems)
@@ -68,9 +104,88 @@ export default function MyDashboard() {
       setForms(unitForms)
       const first = unitForms.filter(f => f.kind === 'Inbound')[0]
       setSelectedFormId(first ? first.id : null)
+      if (user.org_role === 'Member') {
+        try {
+          const progress = await getProgressByMember(user.user_id)
+          const pendingIds = new Set(progress.progress_tasks.filter(t => t.status === 'Pending').map(t => t.sub_task_id))
+          const clearedIds = new Set(progress.progress_tasks.filter(t => t.status === 'Cleared').map(t => t.sub_task_id))
+          const unitKey = (user.unit_id || '').includes('-') ? (user.unit_id as string).split('-')[1] : (user.unit_id as string)
+          const subTasks = await listSubTasks(unitKey)
+          const map: Record<string, UnitSubTask> = {}
+          for (const st of subTasks) map[st.sub_task_id] = st
+          setSubTaskMap(map)
+          const formsInbound = unitForms.filter(f => f.kind === 'Inbound')
+          const pRows: Array<{ formName: string; createdAt?: string; description: string; section: string; location?: string }> = []
+          for (const f of formsInbound) {
+            for (const tid of f.task_ids) {
+              if (!pendingIds.has(tid)) continue
+              const label = taskLabels[tid]
+              const code = label?.section_name || ''
+              const sec = code ? (sectionDisplayMap[code] || code) : ''
+              const loc = (map[tid] as any)?.location || ''
+              pRows.push({ formName: f.name, createdAt: undefined, description: (label?.description || tid), section: sec, location: loc || undefined })
+            }
+          }
+          try {
+            const subs = await listSubmissions(user.user_id)
+            const inboundSubs = subs.filter(s => s.kind === 'Inbound')
+            for (const s of inboundSubs) {
+              for (const t of s.tasks) {
+                if (t.status === 'Pending') {
+                  const label = taskLabels[t.sub_task_id]
+                  const code = label?.section_name || ''
+                  const sec = code ? (sectionDisplayMap[code] || code) : (subTaskMap[t.sub_task_id]?.section_id ? (sectionDisplayMap[String(subTaskMap[t.sub_task_id]?.section_id)] || '') : '')
+                  const loc = (subTaskMap[t.sub_task_id] as any)?.location || ''
+                  pRows.push({ formName: s.form_name, createdAt: s.created_at, description: (label?.description || t.description || t.sub_task_id), section: sec, location: loc || undefined })
+                }
+              }
+            }
+          } catch {}
+          setInboundPendingRows(pRows)
+          const rows: Array<{ formName: string; createdAt?: string; description: string; section: string; location?: string }> = []
+          for (const tid of Array.from(clearedIds)) {
+            const label = taskLabels[tid]
+            const code = label?.section_name || ''
+            const sec = code ? (sectionDisplayMap[code] || code) : ''
+            const entry = (progress.progress_tasks || []).find(t => String(t.sub_task_id) === String(tid)) as any
+            const lastLog = Array.isArray(entry?.logs) && entry.logs.length ? entry.logs[entry.logs.length - 1] : undefined
+            const loc = (map[tid] as any)?.location || ''
+            const formName = formsInbound.find(ff => ff.task_ids.includes(tid))?.name || 'Inbound'
+            rows.push({ formName, createdAt: lastLog?.at, description: (label?.description || tid), section: sec, location: loc || undefined })
+          }
+          try {
+            const subs = await listSubmissions(user.user_id)
+            const inboundSubs = subs.filter(s => s.kind === 'Inbound')
+            for (const s of inboundSubs) {
+              for (const t of s.tasks) {
+                if (t.status === 'Cleared') {
+                  const label = taskLabels[t.sub_task_id]
+                  const code = label?.section_name || ''
+                  const sec = code ? (sectionDisplayMap[code] || code) : (subTaskMap[t.sub_task_id]?.section_id ? (sectionDisplayMap[String(subTaskMap[t.sub_task_id]?.section_id)] || '') : '')
+                  const loc = (subTaskMap[t.sub_task_id] as any)?.location || ''
+                  rows.push({ formName: s.form_name, createdAt: s.created_at, description: (label?.description || t.description || t.sub_task_id), section: sec, location: loc || undefined })
+                }
+              }
+            }
+          } catch {}
+          setInboundCompletedRows(rows)
+        } catch {}
+      }
       setLoading(false)
     }
     load()
+  }, [isAuthenticated, user, refreshKey])
+
+  useEffect(() => {
+    if (!isAuthenticated || !user) return
+    if (import.meta.env.VITE_USE_SUPABASE !== '1') return
+    const channel = supabase
+      .channel('md-updates')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'members_progress', filter: `member_user_id=eq.${user.user_id}` }, () => setRefreshKey(k => k + 1))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'my_form_submissions', filter: `user_id=eq.${user.user_id}` }, () => setRefreshKey(k => k + 1))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'unit_sub_tasks' }, () => setRefreshKey(k => k + 1))
+    channel.subscribe()
+    return () => { supabase.removeChannel(channel) }
   }, [isAuthenticated, user])
 
   useEffect(() => {
@@ -111,7 +226,7 @@ export default function MyDashboard() {
       <header className="bg-github-gray bg-opacity-10 border-b border-github-border">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-16">
-            <h1 className="text-xl font-semibold text-white">Welcome{user?.first_name ? `, ${user.first_name}` : ''}</h1>
+            <BrandMark />
             <HeaderTools />
           </div>
         </div>
@@ -144,7 +259,7 @@ export default function MyDashboard() {
                   </div>
                 )}
                 <div>
-                  <h2 className="text-white text-lg mb-3">My Items</h2>
+                  <h2 className="text-white text-lg mb-3">My Forms</h2>
                   {myInbound.length ? (
                     <ul className="space-y-2">
                       {myInbound.map(i => (
@@ -231,8 +346,48 @@ export default function MyDashboard() {
                         </li>
                       ))}
                     </ul>
+                    ) : (
+                      <p className="text-gray-400 text-sm">No inbound items</p>
+                    )}
+                </div>
+                <div>
+                  <h2 className="text-white text-lg mb-3">Pending Tasks</h2>
+                  {inboundPendingRows.length ? (
+                    <div className="space-y-4">
+                      {inboundPendingRows.map((r, i) => (
+                        <div key={`pr-${i}`} className="border border-github-border rounded">
+                          <div className="px-3 py-2 border-b border-github-border text-white text-sm">{r.formName}</div>
+                          <ul className="p-3 space-y-1 text-sm text-gray-300">
+                            <li>{r.createdAt || '—'}</li>
+                            <li>{r.description}</li>
+                            <li>{r.section || ''}</li>
+                            <li>{r.location || ''}</li>
+                          </ul>
+                        </div>
+                      ))}
+                    </div>
                   ) : (
-                    <p className="text-gray-400 text-sm">No inbound items</p>
+                    <div className="text-gray-400 text-sm">None</div>
+                  )}
+                </div>
+                <div>
+                  <h2 className="text-white text-lg mb-3">Completed Tasks</h2>
+                  {inboundCompletedRows.length ? (
+                    <div className="space-y-4">
+                      {inboundCompletedRows.map((r, i) => (
+                        <div key={`row-${i}`} className="border border-github-border rounded">
+                          <div className="px-3 py-2 border-b border-github-border text-white text-sm">{r.formName}</div>
+                          <ul className="p-3 space-y-1 text-sm text-gray-300">
+                            <li>{r.createdAt || '—'}</li>
+                            <li>{r.description}</li>
+                            <li>{r.section || ''}</li>
+                            <li>{r.location || ''}</li>
+                          </ul>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="text-gray-400 text-sm">None</div>
                   )}
                 </div>
                 
@@ -291,6 +446,28 @@ export default function MyDashboard() {
                     </ul>
                   ) : (
                     <p className="text-gray-400 text-sm">No outbound items</p>
+                  )}
+                </div>
+                <div>
+                  <h2 className="text-white text-lg mb-3">Tasks I Cleared</h2>
+                  {archivedCleared.length ? (
+                    <div className="space-y-4">
+                      {archivedCleared.map(item => {
+                        const m = memberMap[item.member_user_id]
+                        const name = m ? [m.first_name, m.last_name].filter(Boolean).join(' ') : item.member_user_id
+                        return (
+                          <div key={`${item.member_user_id}-${item.sub_task_id}`} className="border border-github-border rounded">
+                            <div className="px-3 py-2 border-b border-github-border text-white text-sm">{name}</div>
+                            <ul className="p-3 space-y-1 text-sm text-gray-300">
+                              <li>{item.sub_task_id}</li>
+                              <li>{item.cleared_at_timestamp || '—'}</li>
+                            </ul>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  ) : (
+                    <p className="text-gray-400 text-sm">No cleared tasks</p>
                   )}
                 </div>
               </div>

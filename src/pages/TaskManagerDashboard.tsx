@@ -307,8 +307,8 @@ export default function TaskManagerDashboard() {
                               const secLabel = sectionDisplayMap[secKey] || secKey || ''
                               const key = `${subTaskId}:${mid}`
                               const tdef = subTaskMap[subTaskId]
-                              const kind = (tdef as any)?.completion_kind as any
-                              const opts = (tdef as any)?.completion_options || []
+                              const kind = tdef?.completion_kind || ''
+                              const opts = tdef?.completion_options || []
                               const current = completionSelections[key]
                               return (
                                 <tr key={`${subTaskId}-${mid}`} className="border-t border-github-border text-gray-300">
@@ -486,9 +486,9 @@ export default function TaskManagerDashboard() {
 
             {tab === 'tasks' && (
               <div className="space-y-6">
-                <div className="flex items-center justify-between">
+                  <div className="flex items-center justify-between">
                   <div className="text-gray-300">Manage section tasks</div>
-                  <button onClick={() => { setErrorMsg(''); setNewDescription(''); setNewLocation(''); setNewInstructions(''); setCreateOpen(true) }} className="px-4 py-2 bg-github-blue hover:bg-blue-600 text-white rounded">Create Task</button>
+                  <button onClick={() => { setErrorMsg(''); setNewDescription(''); setNewLocation(''); setNewInstructions(''); setTaskEditCompletionKind(''); setTaskEditCompletionLabel(''); setTaskEditCompletionOptions(''); setCreateOpen(true) }} className="px-4 py-2 bg-github-blue hover:bg-blue-600 text-white rounded">Create Task</button>
                 </div>
                 <table className="min-w-full text-sm">
                   <thead className="text-gray-400">
@@ -552,7 +552,7 @@ export default function TaskManagerDashboard() {
                             </>
                           ) : (
                             <>
-                              <button onClick={() => { setTaskEditingId(t.id); setTaskEditDescription(t.description || ''); setTaskEditLocation(t.location || ''); setTaskEditInstructions(t.instructions || ''); setTaskEditCompletionKind((t.completion_kind as any) || ''); setTaskEditCompletionLabel(t.completion_label || ''); setTaskEditCompletionOptions((t.completion_options || []).join(', ')) }} className="px-3 py-1 bg-github-blue hover:bg-blue-600 text-white rounded">Edit</button>
+                              <button onClick={() => { setTaskEditingId(t.id); setTaskEditDescription(t.description || ''); setTaskEditLocation(t.location || ''); setTaskEditInstructions(t.instructions || ''); setTaskEditCompletionKind(t.completion_kind || ''); setTaskEditCompletionLabel(t.completion_label || ''); setTaskEditCompletionOptions((t.completion_options || []).join(', ')) }} className="px-3 py-1 bg-github-blue hover:bg-blue-600 text-white rounded">Edit</button>
                               <button onClick={async () => { await deleteSubTask(t.id); const unitKey = (user!.unit_id || '').includes('-') ? (user!.unit_id as string).split('-')[1] : (user!.unit_id as string); const refreshed = await listSubTasks(unitKey); setScopedSubTasks(refreshed.filter(x => String(x.section_id) === String(mySectionId))) }} className="px-3 py-1 bg-red-600 hover:bg-red-700 text-white rounded">Remove</button>
                             </>
                           )}

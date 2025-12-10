@@ -4,6 +4,7 @@ import { listSubTasks, createSubTask, deleteSubTask, updateSubTask } from '@/uti
 import { listForms, createForm, deleteForm, updateForm, UnitForm, UnitFormPurpose } from '@/utils/formsStore'
 import { listSections, createSection, deleteSection, listCompanies, createCompany, deleteCompany, updateSection, UnitSection, UnitCompany } from '@/utils/unitStructure'
 import HeaderTools from '@/components/HeaderTools'
+import BrandMark from '@/components/BrandMark'
 import { fetchJson, LocalUserProfile, UsersIndexEntry } from '@/services/localDataService'
 import { getRoleOverride, setUserRoleOverride } from '@/utils/localUsersStore'
 import { UNITS } from '@/utils/units'
@@ -143,7 +144,7 @@ export default function UnitAdminDashboard() {
   }, [])
 
   useEffect(() => {
-    const filtered = selectedCompany ? sections.filter(s => (s as any).company_id === selectedCompany) : sections
+    const filtered = selectedCompany ? sections.filter(s => s.company_id === selectedCompany) : sections
     setSectionOptions(filtered)
   }, [sections, selectedCompany])
 
@@ -233,7 +234,7 @@ export default function UnitAdminDashboard() {
       <header className="bg-github-gray bg-opacity-10 border-b border-github-border">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-16">
-            <h1 className="text-xl font-semibold text-white">Unit Admin — RUC {rucDisplay}</h1>
+            <BrandMark />
             <HeaderTools />
           </div>
         </div>
@@ -842,7 +843,7 @@ export default function UnitAdminDashboard() {
                                   setTaskEditDescription(t.description || '')
                                   setTaskEditLocation(t.location || '')
                                   setTaskEditInstructions(t.instructions || '')
-                                  setTaskEditCompletionKind((t.completion_kind as any) || '')
+                                  setTaskEditCompletionKind(t.completion_kind || '')
                                   setTaskEditCompletionLabel(t.completion_label || '')
                                   setTaskEditCompletionOptions((t.completion_options || []).join(', '))
                                 }}
@@ -1128,7 +1129,7 @@ export default function UnitAdminDashboard() {
                           className="px-3 py-2 bg-github-gray bg-opacity-20 border border-github-border rounded text-white"
                         >
                           <option value="">Select section</option>
-                          {(editMemberCompany ? sections.filter(s => (s as any).company_id === editMemberCompany) : sections).map(s => (
+                          {(editMemberCompany ? sections.filter(s => s.company_id === editMemberCompany) : sections).map(s => (
                             <option key={s.id} value={String(s.id)}>{(s as any).display_name || s.section_name}</option>
                           ))}
                         </select>
@@ -1146,21 +1147,23 @@ export default function UnitAdminDashboard() {
                           onClick={async () => {
                             const p = edipiMap[editMemberEdipi!]
                             if (!p) { setEditMemberEdipi(null); return }
-                            try {
-                              if (import.meta.env.VITE_USE_SUPABASE === '1') {
-                                const sectionId = editMemberSection && /^\d+$/.test(editMemberSection) ? Number(editMemberSection) : undefined
-                                await sbUpdateUser(p.user_id, {
-                                  company_id: editMemberCompany || undefined,
-                                  platoon_id: sectionId ? String(sectionId) : (editMemberSection || undefined),
-                                  org_role: editMemberRole,
-                                } as any)
-                              }
-                              const updated = { ...p, company_id: editMemberCompany || p.company_id, platoon_id: editMemberSection || (p.platoon_id as any), org_role: editMemberRole }
-                              setEdipiMap(prev => ({ ...prev, [p.edipi]: updated }))
-                              setEditMemberEdipi(null)
-                            } catch {
-                              setEditMemberEdipi(null)
+                          try {
+                            if (import.meta.env.VITE_USE_SUPABASE === '1') {
+                              const sectionId = editMemberSection && /^\d+$/.test(editMemberSection) ? Number(editMemberSection) : undefined
+                              await sbUpdateUser(p.user_id, {
+                                company_id: editMemberCompany || undefined,
+                                platoon_id: sectionId ? String(sectionId) : (editMemberSection || undefined),
+                                org_role: editMemberRole,
+                              })
                             }
+                            const updated = { ...p, company_id: editMemberCompany || p.company_id, platoon_id: editMemberSection || (p.platoon_id as any), org_role: editMemberRole }
+                            setEdipiMap(prev => ({ ...prev, [p.edipi]: updated }))
+                            setEditMemberEdipi(null)
+                          } catch (error) {
+                            console.error('Failed to update user:', error)
+                            alert('Failed to save changes. Please try again.')
+                            setEditMemberEdipi(null)
+                          }
                           }}
                           className="px-4 py-2 bg-github-blue hover:bg-blue-600 text-white rounded"
                         >

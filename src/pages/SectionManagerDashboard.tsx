@@ -1,10 +1,12 @@
 import { useEffect, useState } from 'react'
 import { useAuthStore } from '@/stores/authStore'
 import HeaderTools from '@/components/HeaderTools'
+import BrandMark from '@/components/BrandMark'
 import { fetchJson, LocalUserProfile, UsersIndexEntry, getChecklistByUnit, getProgressByMember } from '@/services/localDataService'
 import { sbListUsers, sbListSubmissionsByUnit } from '@/services/supabaseDataService'
 import { listPendingForSectionManager, listArchivedForUser } from '@/services/localDataService'
 import { getRoleOverride } from '@/utils/localUsersStore'
+import { normalizeOrgRole, normalizeSectionRole } from '@/utils/roles'
 import { listSections } from '@/utils/unitStructure'
 import { listMyItems } from '@/utils/myItemsStore'
 
@@ -24,7 +26,6 @@ export default function SectionManagerDashboard() {
   const [previewSubmission, setPreviewSubmission] = useState<any | null>(null)
   const [previewPendingBySection, setPreviewPendingBySection] = useState<Record<string, string[]>>({})
   const [previewCompletedRows, setPreviewCompletedRows] = useState<Array<{ section: string; task: string; note?: string; at?: string }>>([])
-  const [refreshKey, setRefreshKey] = useState(0)
 
   useEffect(() => {
     if (!user) return
@@ -75,7 +76,7 @@ export default function SectionManagerDashboard() {
           formsLocal = forms
           setSectionForms(formsLocal)
           const latest: Record<string, any> = {}
-          for (const s of submissions.filter(x => (map[x.user_id]?.platoon_id ? String(map[x.user_id]?.platoon_id) === mySectionKey : String((x as any).member?.platoon_id || '') === mySectionKey))) {
+          for (const s of submissions.filter(x => (map[x.user_id]?.platoon_id ? String(map[x.user_id]?.platoon_id) === mySectionKey : String(x.member?.platoon_id || '') === mySectionKey))) {
             const cur = latest[s.user_id]
             const curAt = cur?.created_at || ''
             if (!cur || String(curAt) < String(s.created_at || '')) latest[s.user_id] = s
@@ -86,10 +87,11 @@ export default function SectionManagerDashboard() {
           setSectionForms(formsLocal)
           setLatestInboundMap({})
         }
-      } catch {
+      } catch (error) {
         formsLocal = []
         setSectionForms(formsLocal)
         setLatestInboundMap({})
+        console.error('Failed to load section forms:', error)
       }
       const secs = await listSections(user.unit_id)
       const sec = secs.find(s => String(s.id) === String(user.platoon_id))
@@ -151,10 +153,10 @@ export default function SectionManagerDashboard() {
       setInboundSourceMap(detailMap)
     }
     load()
-  }, [user, refreshKey])
+  }, [user])
 
-  const overrideRole = getRoleOverride(user?.edipi || '')?.org_role
-  const isReviewer = (user?.section_role === 'Section_Reviewer' || user?.org_role === 'Section_Manager' || overrideRole === 'Section_Manager')
+  const overrideRole = getRoleOverride(user?.user_id || '')?.org_role
+  const isReviewer = (normalizeSectionRole(user?.section_role) === 'Section_Reviewer' || normalizeOrgRole(user?.org_role) === 'Section_Manager' || normalizeOrgRole(overrideRole) === 'Section_Manager')
   if (!user || !isReviewer) {
     return (
       <div className="min-h-screen bg-github-dark flex items-center justify-center">
@@ -168,7 +170,7 @@ export default function SectionManagerDashboard() {
       <header className="bg-github-gray bg-opacity-10 border-b border-github-border">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-16">
-            <h1 className="text-xl font-semibold text-white">Section Manager — {sectionLabel}</h1>
+            <BrandMark />
             <HeaderTools />
           </div>
         </div>
@@ -194,8 +196,6 @@ export default function SectionManagerDashboard() {
             >
               Forms
             </button>
-            <div className="flex-1" />
-            <button onClick={() => setRefreshKey(k => k + 1)} className="ml-auto px-3 py-2 text-sm bg-github-blue hover:bg-blue-600 text-white rounded">Refresh</button>
           </div>
           <div className="p-6">
             {tab === 'inbound' && (
@@ -389,62 +389,10 @@ export default function SectionManagerDashboard() {
                 </table>
               </div>
             )}
-            {tab === 'forms' && (
-              <div className="space-y-6">
-                <div className="text-gray-300">Forms submitted by members in your section</div>
-                <table className="min-w-full text-sm">
-                  <thead className="text-gray-400">
-                    <tr>
-                      <th className="text-left p-2">Member</th>
-                      <th className="text-left p-2">EDIPI</th>
-                      <th className="text-left p-2">Form</th>
-                      <th className="text-left p-2">Type</th>
-                      <th className="text-left p-2">Created At</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {sectionForms.map(row => {
-                      const m = memberMap[row.user_id]
-                      const name = m ? [m.first_name, m.last_name].filter(Boolean).join(' ') : row.user_id
-                      return (
-                        <tr key={`${row.user_id}-${row.name}-${row.created_at}`} className="border-t border-github-border text-gray-300">
-                          <td className="p-2">{[m?.rank, name].filter(Boolean).join(' ')}</td>
-                          <td className="p-2">{row.edipi || ''}</td>
-                          <td className="p-2">{row.name}</td>
-                          <td className="p-2">{row.kind}</td>
-                          <td className="p-2">{row.created_at || ''}</td>
-                        </tr>
-                      )
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            )}
             {tab === 'outbound' && (
               <div className="space-y-6">
-                <div className="text-gray-300">Tasks you have cleared</div>
-                <table className="min-w-full text-sm">
-                  <thead className="text-gray-400">
-                    <tr>
-                      <th className="text-left p-2">Member</th>
-                      <th className="text-left p-2">Sub Task ID</th>
-                      <th className="text-left p-2">Cleared At</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {outbound.map(item => {
-                      const m = memberMap[item.member_user_id]
-                      const name = m ? [m.first_name, m.last_name].filter(Boolean).join(' ') : item.member_user_id
-                      return (
-                        <tr key={`${item.member_user_id}-${item.sub_task_id}`} className="border-t border-github-border text-gray-300">
-                          <td className="p-2">{name}</td>
-                          <td className="p-2">{item.sub_task_id}</td>
-                          <td className="p-2">{item.cleared_at_timestamp || '—'}</td>
-                        </tr>
-                      )
-                    })}
-                  </tbody>
-                </table>
+                <div className="text-gray-300">Outbound oversight</div>
+                <div className="text-gray-400 text-sm">No section-level outbound actions here. See My Dashboard for tasks you have cleared.</div>
               </div>
             )}
           </div>

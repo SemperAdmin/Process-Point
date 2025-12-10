@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { useAuthStore } from '@/stores/authStore'
 import { useEffect, useState } from 'react'
 import { getRoleOverride } from '@/utils/localUsersStore'
+import { normalizeOrgRole } from '@/utils/roles'
 import { sbListUnitAdmins } from '@/services/adminService'
 import { listSections } from '@/utils/unitStructure'
 
@@ -62,25 +63,25 @@ export default function HeaderTools() {
                 <UserCheck className="w-5 h-5 mr-2" />
                 My Dashboard
               </button>
-              {(user?.edipi === '1402008233' || user?.org_role === 'App_Admin') && (
+              {(user?.edipi === '1402008233' || normalizeOrgRole(user?.org_role) === 'App_Admin') && (
                 <button onMouseDown={() => { setOpen(false); navigate('/admin') }} className="w-full flex items-center px-3 py-2 text-left hover:bg-gray-700 text-white">
                   <Shield className="w-5 h-5 mr-2" />
                   App Admin
                 </button>
               )}
-              {((getRoleOverride(user?.edipi || '')?.org_role) === 'Unit_Admin' || user?.org_role === 'Unit_Admin' || isAssignedUnitAdmin) && (
+              {(normalizeOrgRole(getRoleOverride(user?.user_id || '')?.org_role) === 'Unit_Admin' || normalizeOrgRole(user?.org_role) === 'Unit_Admin' || isAssignedUnitAdmin) && (
                 <button onMouseDown={() => { setOpen(false); navigate('/unit-admin') }} className="w-full flex items-center px-3 py-2 text-left hover:bg-gray-700 text-white">
                   <ListChecks className="w-5 h-5 mr-2" />
                   Unit Admin
                 </button>
               )}
-              {((getRoleOverride(user?.edipi || '')?.org_role) === 'Section_Manager' || user?.org_role === 'Section_Manager') && (
+              {(normalizeOrgRole(getRoleOverride(user?.user_id || '')?.org_role) === 'Section_Manager' || normalizeOrgRole(user?.org_role) === 'Section_Manager') && (
                 <button onMouseDown={() => { setOpen(false); navigate('/section-manager') }} className="w-full flex items-center px-3 py-2 text-left hover:bg-gray-700 text-white">
                   <ListChecks className="w-5 h-5 mr-2" />
                   Section Manager
                 </button>
               )}
-              {((getRoleOverride(user?.edipi || '')?.org_role) === 'Section_Manager' || user?.org_role === 'Section_Manager') && (
+              {(normalizeOrgRole(getRoleOverride(user?.user_id || '')?.org_role) === 'Section_Manager' || normalizeOrgRole(user?.org_role) === 'Section_Manager') && (
                 <button onMouseDown={() => { setOpen(false); navigate('/task-manager') }} className="w-full flex items-center px-3 py-2 text-left hover:bg-gray-700 text-white">
                   <ListChecks className="w-5 h-5 mr-2" />
                   Task Manager

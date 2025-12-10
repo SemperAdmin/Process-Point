@@ -1,0 +1,15 @@
+export const normalizeOrgRole = (role?: string): 'Unit_Admin' | 'Section_Manager' | 'Member' | 'App_Admin' | '' => {
+  const r = String(role || '').trim().toLowerCase().replace(/\s+/g, '_')
+  if (r === 'unit_admin' || r === 'unitadmin') return 'Unit_Admin'
+  if (r === 'section_manager' || r === 'sectionmanager' || r === 'section_lead') return 'Section_Manager'
+  if (r === 'app_admin' || r === 'appadmin' || r === 'admin') return 'App_Admin'
+  if (r === 'member') return 'Member'
+  return ''
+}
+
+export const normalizeSectionRole = (role?: string): 'Section_Reviewer' | 'Member' | '' => {
+  const r = String(role || '').trim().toLowerCase().replace(/\s+/g, '_')
+  if (r === 'section_reviewer' || r === 'reviewer') return 'Section_Reviewer'
+  if (r === 'member') return 'Member'
+  return ''
+}

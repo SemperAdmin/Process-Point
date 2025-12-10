@@ -229,7 +229,7 @@ export const sbListUsersByRuc = async (ruc: string): Promise<LocalUserProfile[]>
 export const sbUpdateUser = async (user_id: string, patch: Partial<LocalUserProfile>): Promise<void> => {
   const { error } = await supabase
     .from('users')
-    .update({ ...patch, updated_at_timestamp: new Date().toISOString() } as any)
+    .update({ ...patch, updated_at_timestamp: new Date().toISOString() })
     .eq('user_id', user_id)
   if (error) throw error
 }
