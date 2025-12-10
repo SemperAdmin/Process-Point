@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { useAuthStore } from '@/stores/authStore'
 import { getUserByEdipi, verifyPassword } from '@/services/localDataService'
 import { Link } from 'react-router-dom'
+import BrandMark from '@/components/BrandMark'
 
 export default function LandingPage() {
   const navigate = useNavigate()
@@ -42,7 +43,7 @@ export default function LandingPage() {
   return (
     <div className="min-h-screen bg-github-dark flex items-center justify-center px-4">
       <div className="w-full max-w-md bg-github-gray bg-opacity-10 border border-github-border rounded-2xl p-6">
-        <h1 className="text-3xl font-bold text-white mb-6 text-center">Process Point</h1>
+        <div className="flex justify-center mb-6"><BrandMark /></div>
         <div className="space-y-4">
           <input
             type="text"

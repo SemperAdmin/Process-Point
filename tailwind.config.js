@@ -7,15 +7,29 @@ export default {
   theme: {
     extend: {
       colors: {
+        // Remap existing app palette to brand-inspired colors
         github: {
-          dark: '#0d1117',
-          blue: '#0969da',
-          gray: '#f6f8fa',
-          border: '#d0d7de'
+          // Deep navy background
+          dark: '#0b1f3b',
+          // Primary accent → gold
+          blue: '#c8a045',
+          // Soft cream overlay for cards with bg-opacity
+          gray: '#f3e9d6',
+          // Cream/beige border
+          border: '#e8dcc5'
+        },
+        // Direct brand palette for explicit use when needed
+        semper: {
+          navy: '#0b1f3b',
+          cream: '#f3e9d6',
+          red: '#b22c2c',
+          white: '#ffffff',
+          gold: '#c8a045'
         }
       },
       fontFamily: {
-        'inter': ['Inter', 'system-ui', 'sans-serif']
+        'inter': ['Inter', 'system-ui', 'sans-serif'],
+        'heading': ['Oswald', 'Inter', 'system-ui', 'sans-serif']
       }
     },
   },

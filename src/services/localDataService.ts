@@ -158,10 +158,14 @@ export const listMembers = async (): Promise<{ member_user_id: string; unit_id: 
   return index.members
 }
 
-export const listPendingForSectionManager = async (userId: string, unitId: string) => {
+export const listPendingForSectionManager = async (userId: string, unitId: string, userEdipi?: string) => {
   const checklist = await getChecklistByUnit(unitId)
   const responsibleSet = new Set<string>(
-    checklist.sections.flatMap(s => s.sub_tasks.filter(st => st.responsible_user_id.includes(userId)).map(st => st.sub_task_id))
+    checklist.sections.flatMap(s =>
+      s.sub_tasks
+        .filter(st => st.responsible_user_id.includes(userId) || (!!userEdipi && st.responsible_user_id.includes(userEdipi)))
+        .map(st => st.sub_task_id)
+    )
   )
   const members = await listMembers()
   const pending: { member_user_id: string; sub_task_id: string }[] = []

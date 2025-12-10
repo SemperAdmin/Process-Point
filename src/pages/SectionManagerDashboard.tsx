@@ -1,11 +1,14 @@
 import { useEffect, useState } from 'react'
 import { useAuthStore } from '@/stores/authStore'
 import HeaderTools from '@/components/HeaderTools'
-import { fetchJson, LocalUserProfile, UsersIndexEntry } from '@/services/localDataService'
+import BrandMark from '@/components/BrandMark'
+import { fetchJson, LocalUserProfile, UsersIndexEntry, getChecklistByUnit, getProgressByMember } from '@/services/localDataService'
 import { sbListUsers, sbListSubmissionsByUnit } from '@/services/supabaseDataService'
 import { listPendingForSectionManager, listArchivedForUser } from '@/services/localDataService'
 import { getRoleOverride } from '@/utils/localUsersStore'
+import { normalizeOrgRole, normalizeSectionRole } from '@/utils/roles'
 import { listSections } from '@/utils/unitStructure'
+import { listMyItems } from '@/utils/myItemsStore'
 
 export default function SectionManagerDashboard() {
   const { user } = useAuthStore()
@@ -15,6 +18,14 @@ export default function SectionManagerDashboard() {
   const [memberMap, setMemberMap] = useState<Record<string, LocalUserProfile>>({})
   const [sectionLabel, setSectionLabel] = useState('')
   const [sectionForms, setSectionForms] = useState<Array<{ user_id: string; edipi?: string; name: string; kind: string; created_at?: string }>>([])
+  const [inboundMembers, setInboundMembers] = useState<string[]>([])
+  const [inboundSourceMap, setInboundSourceMap] = useState<Record<string, { items: number; forms: number; pending: number; lastForm?: string; lastFormName?: string; lastFormKind?: string; lastFormCreatedAt?: string }>>({})
+  const [sectionDisplayMap, setSectionDisplayMap] = useState<Record<string, string>>({})
+  const [taskLabels, setTaskLabels] = useState<Record<string, { section_name: string; description: string }>>({})
+  const [latestInboundMap, setLatestInboundMap] = useState<Record<string, any>>({})
+  const [previewSubmission, setPreviewSubmission] = useState<any | null>(null)
+  const [previewPendingBySection, setPreviewPendingBySection] = useState<Record<string, string[]>>({})
+  const [previewCompletedRows, setPreviewCompletedRows] = useState<Array<{ section: string; task: string; note?: string; at?: string }>>([])
 
   useEffect(() => {
     if (!user) return
@@ -40,10 +51,11 @@ export default function SectionManagerDashboard() {
         }
       }
       setMemberMap(map)
-      const pending = await listPendingForSectionManager(user.user_id, user.unit_id)
+      const pending = await listPendingForSectionManager(user.user_id, user.unit_id, user.edipi)
       setInbound(pending)
       const archived = await listArchivedForUser(user.user_id, user.unit_id)
       setOutbound(archived)
+      let formsLocal: Array<{ user_id: string; edipi?: string; name: string; kind: string; created_at?: string }> = []
       try {
         if (import.meta.env.VITE_USE_SUPABASE === '1') {
           const submissions = await sbListSubmissionsByUnit(user.unit_id)
@@ -61,22 +73,90 @@ export default function SectionManagerDashboard() {
               kind: s.kind,
               created_at: s.created_at,
             }))
-          setSectionForms(forms)
+          formsLocal = forms
+          setSectionForms(formsLocal)
+          const latest: Record<string, any> = {}
+          for (const s of submissions.filter(x => (map[x.user_id]?.platoon_id ? String(map[x.user_id]?.platoon_id) === mySectionKey : String(x.member?.platoon_id || '') === mySectionKey))) {
+            const cur = latest[s.user_id]
+            const curAt = cur?.created_at || ''
+            if (!cur || String(curAt) < String(s.created_at || '')) latest[s.user_id] = s
+          }
+          setLatestInboundMap(latest)
         } else {
-          setSectionForms([])
+          formsLocal = []
+          setSectionForms(formsLocal)
+          setLatestInboundMap({})
         }
-      } catch {
-        setSectionForms([])
+      } catch (error) {
+        formsLocal = []
+        setSectionForms(formsLocal)
+        setLatestInboundMap({})
+        console.error('Failed to load section forms:', error)
       }
       const secs = await listSections(user.unit_id)
       const sec = secs.find(s => String(s.id) === String(user.platoon_id))
       setSectionLabel((sec as any)?.display_name || sec?.section_name || 'Section')
+      const dispMap: Record<string, string> = {}
+      for (const s of secs) {
+        dispMap[s.section_name] = ((s as any).display_name || s.section_name)
+        dispMap[String(s.id)] = ((s as any).display_name || s.section_name)
+      }
+      setSectionDisplayMap(dispMap)
+
+      try {
+        const checklist = await getChecklistByUnit(user.unit_id)
+        const labels: Record<string, { section_name: string; description: string }> = {}
+        for (const sec of checklist.sections) {
+          for (const st of sec.sub_tasks) {
+            labels[st.sub_task_id] = { section_name: sec.section_name, description: st.description }
+          }
+        }
+        setTaskLabels(labels)
+      } catch {}
+
+      const mySecKey = String(user.platoon_id || '')
+      const sectionMemberIds = Object.values(map)
+        .filter(p => p.unit_id === user.unit_id && (mySecKey ? String(p.platoon_id || '') === mySecKey : true))
+        .map(p => p.user_id)
+      const inboundFromProgress = new Set(pending.filter(it => sectionMemberIds.includes(it.member_user_id)).map(it => it.member_user_id))
+      const inboundFromForms = new Set((formsLocal || []).filter(f => f.kind === 'Inbound').map(f => f.user_id))
+      const inboundFromItems = new Set<string>()
+      const detailMap: Record<string, { items: number; forms: number; pending: number; lastForm?: string; lastFormName?: string; lastFormKind?: string; lastFormCreatedAt?: string }> = {}
+      for (const mid of sectionMemberIds) {
+        try {
+          const items = await listMyItems(mid, 'Inbound')
+          const itemsCount = (items || []).length
+          if (itemsCount) inboundFromItems.add(mid)
+          const formsCount = (formsLocal || []).filter(f => f.kind === 'Inbound' && f.user_id === mid).length
+          const inboundFormsForUser = (formsLocal || []).filter(f => f.kind === 'Inbound' && f.user_id === mid)
+          const lastForm = inboundFormsForUser.map(f => f.created_at || '').sort().slice(-1)[0] || undefined
+          const lastEntry = inboundFormsForUser.sort((a, b) => String(a.created_at || '') < String(b.created_at || '') ? -1 : 1).slice(-1)[0]
+          const lastFormName = lastEntry?.name || undefined
+          const lastFormKind = lastEntry?.kind || undefined
+          const lastFormCreatedAt = lastEntry?.created_at || undefined
+          const pendingCount = pending.filter(it => it.member_user_id === mid).length
+          detailMap[mid] = { items: itemsCount, forms: formsCount, pending: pendingCount, lastForm, lastFormName, lastFormKind, lastFormCreatedAt }
+        } catch {
+          const inboundFormsForUser = (formsLocal || []).filter(f => f.kind === 'Inbound' && f.user_id === mid)
+          const formsCount = inboundFormsForUser.length
+          const lastForm = inboundFormsForUser.map(f => f.created_at || '').sort().slice(-1)[0] || undefined
+          const lastEntry = inboundFormsForUser.sort((a, b) => String(a.created_at || '') < String(b.created_at || '') ? -1 : 1).slice(-1)[0]
+          const lastFormName = lastEntry?.name || undefined
+          const lastFormKind = lastEntry?.kind || undefined
+          const lastFormCreatedAt = lastEntry?.created_at || undefined
+          const pendingCount = pending.filter(it => it.member_user_id === mid).length
+          detailMap[mid] = { items: 0, forms: formsCount, pending: pendingCount, lastForm, lastFormName, lastFormKind, lastFormCreatedAt }
+        }
+      }
+      const union = Array.from(new Set<string>([...Array.from(inboundFromProgress), ...Array.from(inboundFromForms), ...Array.from(inboundFromItems)]))
+      setInboundMembers(union)
+      setInboundSourceMap(detailMap)
     }
     load()
   }, [user])
 
-  const overrideRole = getRoleOverride(user?.edipi || '')?.org_role
-  const isReviewer = (user?.section_role === 'Section_Reviewer' || user?.org_role === 'Section_Manager' || overrideRole === 'Section_Manager')
+  const overrideRole = getRoleOverride(user?.user_id || '')?.org_role
+  const isReviewer = (normalizeSectionRole(user?.section_role) === 'Section_Reviewer' || normalizeOrgRole(user?.org_role) === 'Section_Manager' || normalizeOrgRole(overrideRole) === 'Section_Manager')
   if (!user || !isReviewer) {
     return (
       <div className="min-h-screen bg-github-dark flex items-center justify-center">
@@ -90,7 +170,7 @@ export default function SectionManagerDashboard() {
       <header className="bg-github-gray bg-opacity-10 border-b border-github-border">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-16">
-            <h1 className="text-xl font-semibold text-white">Section Manager — {sectionLabel}</h1>
+            <BrandMark />
             <HeaderTools />
           </div>
         </div>
@@ -125,36 +205,73 @@ export default function SectionManagerDashboard() {
                   <thead className="text-gray-400">
                     <tr>
                       <th className="text-left p-2">Member</th>
-                      <th className="text-left p-2">Sub Task ID</th>
-                      <th className="text-left p-2">Actions</th>
+                      <th className="text-left p-2">EDIPI</th>
+                      <th className="text-left p-2">Pending</th>
+                      <th className="text-left p-2">Form</th>
+                      <th className="text-left p-2">Type</th>
+                      <th className="text-left p-2">Created At</th>
+                      <th className="text-left p-2">View</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {inbound.map(item => {
-                      const m = memberMap[item.member_user_id]
-                      const name = m ? [m.first_name, m.last_name].filter(Boolean).join(' ') : item.member_user_id
+                    {inboundMembers.map(mid => {
+                      const m = memberMap[mid]
+                      const name = m ? [m.first_name, m.last_name].filter(Boolean).join(' ') : mid
+                      const d = inboundSourceMap[mid] || { items: 0, forms: 0, pending: 0, lastForm: '', lastFormName: '', lastFormKind: '', lastFormCreatedAt: '' }
+                      const edipi = m?.edipi || ''
+                      const latest = latestInboundMap[mid]
                       return (
-                        <tr key={`${item.member_user_id}-${item.sub_task_id}`} className="border-t border-github-border text-gray-300">
+                        <tr key={mid} className="border-t border-github-border text-gray-300">
                           <td className="p-2">{name}</td>
-                          <td className="p-2">{item.sub_task_id}</td>
-                          <td className="p-2 flex gap-2">
+                          <td className="p-2">{edipi}</td>
+                          <td className="p-2">{d.pending}</td>
+                          <td className="p-2">{d.lastFormName || '—'}</td>
+                          <td className="p-2">{d.lastFormKind || '—'}</td>
+                          <td className="p-2">{d.lastFormCreatedAt || '—'}</td>
+                          <td className="p-2">
                             <button
+                              className="px-3 py-1 bg-github-blue hover:bg-blue-600 text-white rounded text-xs"
                               onClick={async () => {
-                                // TODO: implement approve logic
-                                alert(`Approve ${item.sub_task_id} for ${name}`)
+                                const progress = await getProgressByMember(mid)
+                                const pendingSet = new Set(progress.progress_tasks.filter(t => t.status === 'Pending').map(t => t.sub_task_id))
+                                const completedSet = new Set(progress.progress_tasks.filter(t => t.status === 'Cleared').map(t => t.sub_task_id))
+                                const formName = d.lastFormName || latest?.form_name || 'Inbound'
+                                const kind = 'Inbound'
+                                const createdAt = d.lastFormCreatedAt || latest?.created_at || ''
+                                const member = { edipi: m?.edipi || '', rank: m?.rank, first_name: m?.first_name, last_name: m?.last_name, company_id: m?.company_id, platoon_id: m?.platoon_id }
+                                const tasksIds = Array.from(new Set([...(latest?.tasks || []).map((t: any) => t.sub_task_id)]))
+                                const pendingBySection: Record<string, string[]> = {}
+                                const allSectionNames = new Set<string>()
+                                for (const tid of tasksIds) {
+                                  const label = taskLabels[tid]
+                                  const code = label?.section_name || ''
+                                  const name2 = code ? (sectionDisplayMap[code] || code) : ''
+                                  allSectionNames.add(name2)
+                                }
+                                for (const nm of allSectionNames) pendingBySection[nm] = []
+                                for (const tid of tasksIds) {
+                                  if (!pendingSet.has(tid)) continue
+                                  const label = taskLabels[tid]
+                                  const code = label?.section_name || ''
+                                  const name2 = code ? (sectionDisplayMap[code] || code) : ''
+                                  pendingBySection[name2].push(label?.description || tid)
+                                }
+                                setPreviewPendingBySection(pendingBySection)
+                                const completedRows: Array<{ section: string; task: string; note?: string; at?: string }> = []
+                                for (const tid of tasksIds) {
+                                  if (!completedSet.has(tid)) continue
+                                  const label = taskLabels[tid]
+                                  const code = label?.section_name || ''
+                                  const secName = code ? (sectionDisplayMap[code] || code) : ''
+                                  const entry = (progress.progress_tasks || []).find(t => String(t.sub_task_id) === String(tid)) as any
+                                  const lastLog = Array.isArray(entry?.logs) && entry.logs.length ? entry.logs[entry.logs.length - 1] : undefined
+                                  completedRows.push({ section: secName, task: (label?.description || tid), note: lastLog?.note, at: lastLog?.at })
+                                }
+                                setPreviewCompletedRows(completedRows)
+                                setPreviewSubmission({ user_id: mid, unit_id: user.unit_id, form_name: formName, kind, created_at: createdAt, member })
                               }}
-                              className="px-3 py-1 bg-green-600 hover:bg-green-700 text-white rounded"
                             >
-                              Approve
-                            </button>
-                            <button
-                              onClick={async () => {
-                                // TODO: implement reject logic
-                                alert(`Reject ${item.sub_task_id} for ${name}`)
-                              }}
-                              className="px-3 py-1 bg-red-600 hover:bg-red-700 text-white rounded"
-                            >
-                              Reject
+                              View
                             </button>
                           </td>
                         </tr>
@@ -162,23 +279,10 @@ export default function SectionManagerDashboard() {
                     })}
                   </tbody>
                 </table>
-              </div>
-            )}
-            {tab === 'forms' && (
-              <div className="space-y-6">
-                <div className="text-gray-300">Forms submitted by members in your section</div>
+
                 <table className="min-w-full text-sm">
-                  <thead className="text-gray-400">
-                    <tr>
-                      <th className="text-left p-2">Member</th>
-                      <th className="text-left p-2">EDIPI</th>
-                      <th className="text-left p-2">Form</th>
-                      <th className="text-left p-2">Type</th>
-                      <th className="text-left p-2">Created At</th>
-                    </tr>
-                  </thead>
                   <tbody>
-                    {sectionForms.map(row => {
+                    {(sectionForms || []).filter(row => row.kind === 'Inbound').map(row => {
                       const m = memberMap[row.user_id]
                       const name = m ? [m.first_name, m.last_name].filter(Boolean).join(' ') : row.user_id
                       return (
@@ -193,6 +297,65 @@ export default function SectionManagerDashboard() {
                     })}
                   </tbody>
                 </table>
+              </div>
+            )}
+            {previewSubmission && (
+              <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50">
+                <div className="w-full max-w-2xl bg-black border border-github-border rounded-xl p-6">
+                  <h3 className="text-white text-lg mb-4">{previewSubmission.kind} — {previewSubmission.form_name}</h3>
+                  <div className="grid grid-cols-2 gap-3 text-sm text-gray-300">
+                    <div><span className="text-gray-400">EDIPI:</span> {previewSubmission.member.edipi}</div>
+                    <div><span className="text-gray-400">Unit:</span> {previewSubmission.unit_id}</div>
+                    <div className="col-span-2"><span className="text-gray-400">Member:</span> {[previewSubmission.member.rank, [previewSubmission.member.first_name, previewSubmission.member.last_name].filter(Boolean).join(' ')].filter(Boolean).join(' ')}</div>
+                    <div><span className="text-gray-400">Company:</span> {previewSubmission.member.company_id || ''}</div>
+                    <div><span className="text-gray-400">Section:</span> {sectionDisplayMap[String(previewSubmission.member.platoon_id || '')] || previewSubmission.member.platoon_id || ''}</div>
+                  </div>
+                  <div className="mt-6 space-y-6">
+                    <div>
+                      <h4 className="text-white text-sm mb-2">Pending</h4>
+                      {Object.keys(previewPendingBySection).length ? (
+                        <div className="space-y-4">
+                          {Object.entries(previewPendingBySection).map(([sec, items]) => (
+                            <div key={sec} className="border border-github-border rounded">
+                              <div className="px-3 py-2 border-b border-github-border text-white text-sm">{sec || 'Section'}</div>
+                              <ul className="p-3 space-y-1 text-sm text-gray-300">
+                                {items.map((d, i) => (<li key={`${sec}-${i}`}>{d}</li>))}
+                              </ul>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (<div className="text-gray-400 text-sm">None</div>)}
+                    </div>
+                    <div>
+                      <h4 className="text-white text-sm mb-2">Completed</h4>
+                      {previewCompletedRows.length ? (
+                        <table className="min-w-full text-sm">
+                          <thead className="text-gray-400">
+                            <tr>
+                              <th className="text-left p-2">Section</th>
+                              <th className="text-left p-2">Task</th>
+                              <th className="text-left p-2">Log</th>
+                              <th className="text-left p-2">When</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {previewCompletedRows.map((r, i) => (
+                              <tr key={`row-${i}`} className="border-t border-github-border text-gray-300">
+                                <td className="p-2">{r.section || ''}</td>
+                                <td className="p-2">{r.task}</td>
+                                <td className="p-2">{r.note || ''}</td>
+                                <td className="p-2">{r.at || ''}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      ) : (<div className="text-gray-400 text-sm">None</div>)}
+                    </div>
+                  </div>
+                  <div className="mt-6 flex gap-2 justify-end">
+                    <button onClick={() => { setPreviewSubmission(null); setPreviewPendingBySection({}); setPreviewCompletedRows([]) }} className="px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded">Close</button>
+                  </div>
+                </div>
               </div>
             )}
             {tab === 'forms' && (
@@ -228,29 +391,8 @@ export default function SectionManagerDashboard() {
             )}
             {tab === 'outbound' && (
               <div className="space-y-6">
-                <div className="text-gray-300">Tasks you have cleared</div>
-                <table className="min-w-full text-sm">
-                  <thead className="text-gray-400">
-                    <tr>
-                      <th className="text-left p-2">Member</th>
-                      <th className="text-left p-2">Sub Task ID</th>
-                      <th className="text-left p-2">Cleared At</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {outbound.map(item => {
-                      const m = memberMap[item.member_user_id]
-                      const name = m ? [m.first_name, m.last_name].filter(Boolean).join(' ') : item.member_user_id
-                      return (
-                        <tr key={`${item.member_user_id}-${item.sub_task_id}`} className="border-t border-github-border text-gray-300">
-                          <td className="p-2">{name}</td>
-                          <td className="p-2">{item.sub_task_id}</td>
-                          <td className="p-2">{item.cleared_at_timestamp || '—'}</td>
-                        </tr>
-                      )
-                    })}
-                  </tbody>
-                </table>
+                <div className="text-gray-300">Outbound oversight</div>
+                <div className="text-gray-400 text-sm">No section-level outbound actions here. See My Dashboard for tasks you have cleared.</div>
               </div>
             )}
           </div>

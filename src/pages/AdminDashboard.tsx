@@ -3,6 +3,8 @@ import { useAuthStore } from '@/stores/authStore'
 import { sbListUnitAdmins, sbUpsertUnitAdmin, sbRemoveUnitAdmin, sbPromoteUserToUnitAdmin } from '@/services/adminService'
 import { sbGetUserByEdipi } from '@/services/supabaseDataService'
 import HeaderTools from '@/components/HeaderTools'
+import BrandMark from '@/components/BrandMark'
+import { normalizeOrgRole } from '@/utils/roles'
 
 export default function AdminDashboard() {
   const { user } = useAuthStore()
@@ -77,7 +79,7 @@ export default function AdminDashboard() {
     return [p.first_name, p.last_name].filter(Boolean).join(' ')
   }
 
-  if (!user || !(user.edipi === '1402008233' || user.org_role === 'App_Admin')) {
+  if (!user || !(user.edipi === '1402008233' || normalizeOrgRole(user.org_role) === 'App_Admin')) {
     return (
       <div className="min-h-screen bg-github-dark flex items-center justify-center">
         <p className="text-gray-400">Access denied</p>
@@ -90,7 +92,7 @@ export default function AdminDashboard() {
       <header className="bg-github-gray bg-opacity-10 border-b border-github-border">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-16">
-            <h1 className="text-xl font-semibold text-white">App Admin</h1>
+            <BrandMark />
             <HeaderTools />
           </div>
         </div>
@@ -139,9 +141,14 @@ export default function AdminDashboard() {
                           {name ? `${name} (${a.admin_user_id})` : a.admin_user_id}
                           <button
                             onClick={async () => {
-                              await sbRemoveUnitAdmin(uk, a.admin_user_id)
-                              const next = await sbListUnitAdmins()
-                              setAdmins(next)
+                              try {
+                                await sbRemoveUnitAdmin(uk, a.admin_user_id)
+                                const next = await sbListUnitAdmins()
+                                setAdmins(next)
+                              } catch (error) {
+                                console.error('Failed to remove admin:', error)
+                                alert('Failed to remove admin. Please try again.')
+                              }
                             }}
                             className="px-2 py-0.5 bg-red-600 hover:bg-red-700 text-white rounded text-xs"
                           >Remove</button>
@@ -169,14 +176,19 @@ export default function AdminDashboard() {
                                   />
                                   <button
                                     onClick={async () => {
-                                      const edipi = (assignEdipi[uk] ?? '').trim()
-                                      if (!edipi) return
-                                      await sbUpsertUnitAdmin(uk, u.unit_name, edipi, u.ruc)
-                                      await sbPromoteUserToUnitAdmin(edipi, uk)
-                                      const next = await sbListUnitAdmins()
-                                      setAdmins(next)
-                                      setAssignEdipi(prev => ({ ...prev, [uk]: '' }))
-                                      setAddingUnit(null)
+                                      try {
+                                        const edipi = (assignEdipi[uk] ?? '').trim()
+                                        if (!edipi) return
+                                        await sbUpsertUnitAdmin(uk, u.unit_name, edipi, u.ruc)
+                                        await sbPromoteUserToUnitAdmin(edipi, uk)
+                                        const next = await sbListUnitAdmins()
+                                        setAdmins(next)
+                                        setAssignEdipi(prev => ({ ...prev, [uk]: '' }))
+                                        setAddingUnit(null)
+                                      } catch (error) {
+                                        console.error('Failed to add admin:', error)
+                                        alert('Failed to add admin. Please try again.')
+                                      }
                                     }}
                                     className="px-3 py-1 bg-github-blue hover:bg-blue-600 text-white rounded"
                                   >

@@ -2,10 +2,12 @@ import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Settings, LogOut, ListChecks, Archive, UserCheck, Shield } from 'lucide-react'
 import HeaderTools from '@/components/HeaderTools'
+import BrandMark from '@/components/BrandMark'
 import { useAuthStore } from '@/stores/authStore'
 import { listPendingForSectionManager, listArchivedForUser, getChecklistByUnit, getProgressByMember } from '@/services/localDataService'
 import { canonicalize } from '@/utils/json'
 import { sha256String } from '@/utils/crypto'
+import { normalizeOrgRole } from '@/utils/roles'
 
 export default function Dashboard() {
   const navigate = useNavigate()
@@ -23,13 +25,13 @@ export default function Dashboard() {
         navigate('/')
         return
       }
-      if (user.org_role === 'Section_Manager') {
-        const p = await listPendingForSectionManager(user.user_id, user.unit_id)
+      if (normalizeOrgRole(user.org_role) === 'Section_Manager') {
+        const p = await listPendingForSectionManager(user.user_id, user.unit_id, user.edipi)
         const a = await listArchivedForUser(user.user_id, user.unit_id)
         setPending(p)
         setArchived(a)
       }
-      if (user.org_role === 'Member') {
+      if (normalizeOrgRole(user.org_role) === 'Member') {
         const progress = await getProgressByMember(user.user_id)
         setMemberTasks(progress.progress_tasks.map(t => ({ sub_task_id: t.sub_task_id, status: t.status })))
       }
@@ -59,7 +61,7 @@ export default function Dashboard() {
       <header className="bg-github-gray bg-opacity-10 border-b border-github-border">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-16">
-            <h1 className="text-xl font-semibold text-white">Process Point</h1>
+            <BrandMark />
             <HeaderTools />
           </div>
         </div>
@@ -84,7 +86,7 @@ export default function Dashboard() {
           <div className="p-6">
             {activeTab === 'inbound' && (
               <div className="space-y-6">
-                {user?.org_role === 'Member' && (
+                {normalizeOrgRole(user?.org_role) === 'Member' && (
                   <div>
                     <div className="flex items-center mb-4">
                       <UserCheck className="w-6 h-6 text-github-blue mr-2" />
@@ -101,7 +103,7 @@ export default function Dashboard() {
                     )}
                   </div>
                 )}
-                {user?.org_role === 'Section_Manager' && (
+                {normalizeOrgRole(user?.org_role) === 'Section_Manager' && (
                   <div>
                     <div className="flex items-center mb-4">
                       <ListChecks className="w-6 h-6 text-github-blue mr-2" />
@@ -156,7 +158,7 @@ export default function Dashboard() {
             )}
             {activeTab === 'outbound' && (
               <div className="space-y-6">
-                {user?.org_role === 'Member' && (
+                {normalizeOrgRole(user?.org_role) === 'Member' && (
                   <div>
                     <div className="flex items-center mb-4">
                       <Archive className="w-6 h-6 text-github-blue mr-2" />
@@ -165,7 +167,7 @@ export default function Dashboard() {
                     <p className="text-gray-400 text-sm">No outbound actions recorded</p>
                   </div>
                 )}
-                {user?.org_role === 'Section_Manager' && (
+                {normalizeOrgRole(user?.org_role) === 'Section_Manager' && (
                   <div>
                     <div className="flex items-center mb-4">
                       <Archive className="w-6 h-6 text-github-blue mr-2" />

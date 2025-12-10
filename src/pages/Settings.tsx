@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { ArrowLeft, User, Bell, Palette, Shield, Save } from 'lucide-react'
 import HeaderTools from '@/components/HeaderTools'
+import BrandMark from '@/components/BrandMark'
 import { listCompanies, listSections } from '@/utils/unitStructure'
 import { sbUpdateUser } from '@/services/supabaseDataService'
 import { fetchJson, UsersIndexEntry, LocalUserProfile } from '@/services/localDataService'
@@ -11,6 +12,7 @@ import '@/js/military-data.js'
 import { useEffect } from 'react'
 import { useAuthStore } from '@/stores/authStore'
 import { getRoleOverride, setUserRoleOverride } from '@/utils/localUsersStore'
+import { normalizeOrgRole } from '@/utils/roles'
 
 export default function Settings() {
   const navigate = useNavigate()
@@ -25,7 +27,7 @@ export default function Settings() {
   const [companyId, setCompanyId] = useState(user?.company_id || '')
   const [platoonId, setPlatoonId] = useState(user?.platoon_id || '')
   const [role, setRole] = useState<'Unit_Admin' | 'Section_Manager' | 'Member'>(
-    (getRoleOverride(user?.edipi || '')?.org_role as any) || (user?.org_role as any) || 'Member'
+    (normalizeOrgRole(getRoleOverride(user?.user_id || '')?.org_role) as any) || (normalizeOrgRole(user?.org_role) as any) || 'Member'
   )
   const [companyOptions, setCompanyOptions] = useState<Array<{ id: string; name: string }>>([])
   const [sectionOptions, setSectionOptions] = useState<Array<{ id: string; name: string }>>([])
@@ -106,7 +108,7 @@ export default function Settings() {
               >
                 <ArrowLeft className="w-5 h-5" />
               </button>
-              <h1 className="text-xl font-semibold text-white">Settings</h1>
+              <BrandMark />
             </div>
             <HeaderTools />
           </div>
@@ -243,11 +245,11 @@ export default function Settings() {
                         }
                         try {
                           if (import.meta.env.VITE_USE_SUPABASE === '1') {
-                            await sbUpdateUser(user.user_id, patch as any)
+                            await sbUpdateUser(user.user_id, patch)
                           }
                           const updated = { ...user, ...patch, updated_at_timestamp: new Date().toISOString() }
                           login(updated as any)
-                          if (user?.edipi) setUserRoleOverride(user.edipi, role)
+                          if (user?.user_id) setUserRoleOverride(user.user_id, role)
                           alert('Profile updated')
                         } catch (e: any) {
                           alert(e?.message || 'Failed to update profile')

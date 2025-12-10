@@ -70,6 +70,32 @@ export const sbListForms = async (unit_id: string): Promise<UnitForm[]> => {
   return dedup as any
 }
 
+export const sbUpdateMemberProgressTask = async (
+  member_user_id: string,
+  unit_id: string,
+  sub_task_id: string,
+  patch: { completion_values?: string[]; status?: 'Pending' | 'Cleared'; cleared_by_user_id?: string; cleared_at_timestamp?: string; log?: { note: string; by_user_id: string; at: string } }
+): Promise<void> => {
+  const current = await sbGetProgressByMember(member_user_id)
+  const base = current || { member_user_id, unit_id, official_checkin_timestamp: new Date().toISOString(), current_file_sha: '', progress_tasks: [] }
+  let found = false
+  const tasks = (base.progress_tasks || []).map((t: any) => {
+    if (String(t.sub_task_id) === String(sub_task_id)) {
+      found = true
+      const nextLogs = patch.log ? ([...(t.logs || []), patch.log]) : (t.logs || [])
+      const { log, ...rest } = patch as any
+      return { ...t, ...rest, logs: nextLogs }
+    }
+    return t
+  })
+  if (!found) tasks.push({ sub_task_id, status: patch.status || 'Pending', completion_values: patch.completion_values || [], cleared_by_user_id: patch.cleared_by_user_id, cleared_at_timestamp: patch.cleared_at_timestamp, logs: patch.log ? [patch.log] : [] })
+  const next = { ...base, progress_tasks: tasks }
+  const canonical = JSON.stringify(next)
+  const sha = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(canonical)).then(buf => Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join(''))
+  ;(next as any).current_file_sha = sha
+  await sbUpsertProgress(next as any)
+}
+
 export const sbCreateForm = async (form: Omit<UnitForm, 'id' | 'created_at' | 'updated_at'>): Promise<UnitForm> => {
   const { data, error } = await supabase
     .from('unit_forms')
@@ -203,7 +229,7 @@ export const sbListUsersByRuc = async (ruc: string): Promise<LocalUserProfile[]>
 export const sbUpdateUser = async (user_id: string, patch: Partial<LocalUserProfile>): Promise<void> => {
   const { error } = await supabase
     .from('users')
-    .update({ ...patch, updated_at_timestamp: new Date().toISOString() } as any)
+    .update({ ...patch, updated_at_timestamp: new Date().toISOString() })
     .eq('user_id', user_id)
   if (error) throw error
 }
