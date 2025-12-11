@@ -31,6 +31,54 @@ export default function SectionManagerDashboard() {
   const [inboundView, setInboundView] = useState<'Pending' | 'Completed'>('Pending')
   const [outboundView, setOutboundView] = useState<'Pending' | 'Completed'>('Pending')
 
+  // Helper function to handle view details for submissions
+  const handleViewDetails = async (
+    row: { user_id: string; form_name: string; kind: 'Inbound' | 'Outbound'; created_at?: string },
+    member: LocalUserProfile | undefined,
+    submission: any
+  ) => {
+    // Use form-scoped task status from the submission
+    const submissionTasks = submission?.tasks || []
+    const pendingSet = new Set(submissionTasks.filter((t: any) => t.status !== 'Cleared').map((t: any) => t.sub_task_id))
+    const completedSet = new Set(submissionTasks.filter((t: any) => t.status === 'Cleared').map((t: any) => t.sub_task_id))
+    const formName = row.form_name
+    const kind = row.kind
+    const createdAt = row.created_at || ''
+    const memberData = { edipi: member?.edipi || '', rank: member?.rank, first_name: member?.first_name, last_name: member?.last_name, company_id: member?.company_id, platoon_id: member?.platoon_id }
+    const tasksIds = submissionTasks.map((t: any) => t.sub_task_id)
+    const pendingBySection: Record<string, string[]> = {}
+    const allSectionNames = new Set<string>()
+    for (const tid of tasksIds) {
+      const label = taskLabels[tid]
+      const code = label?.section_name || ''
+      const name2 = code ? (sectionDisplayMap[code] || code) : ''
+      allSectionNames.add(name2)
+    }
+    for (const nm of allSectionNames) pendingBySection[nm] = []
+    for (const tid of tasksIds) {
+      if (!pendingSet.has(tid)) continue
+      const label = taskLabels[tid]
+      const code = label?.section_name || ''
+      const name2 = code ? (sectionDisplayMap[code] || code) : ''
+      pendingBySection[name2].push(label?.description || tid)
+    }
+    setPreviewPendingBySection(pendingBySection)
+    const completedRows: Array<{ section: string; task: string; note?: string; at?: string }> = []
+    // Get global progress for completion logs (historical tracking)
+    const progress = await getProgressByMember(row.user_id)
+    for (const tid of tasksIds) {
+      if (!completedSet.has(tid)) continue
+      const label = taskLabels[tid]
+      const code = label?.section_name || ''
+      const secName = code ? (sectionDisplayMap[code] || code) : ''
+      const entry = (progress.progress_tasks || []).find(t => String(t.sub_task_id) === String(tid)) as any
+      const lastLog = Array.isArray(entry?.logs) && entry.logs.length ? entry.logs[entry.logs.length - 1] : undefined
+      completedRows.push({ section: secName, task: (label?.description || tid), note: lastLog?.note, at: lastLog?.at })
+    }
+    setPreviewCompletedRows(completedRows)
+    setPreviewSubmission({ user_id: row.user_id, unit_id: user?.unit_id, form_name: formName, kind, created_at: createdAt, member: memberData })
+  }
+
   useEffect(() => {
     if (!user) return
     const load = async () => {
@@ -266,49 +314,7 @@ export default function SectionManagerDashboard() {
                               <td className="p-2">
                                 <button
                                   className="px-3 py-1 bg-github-blue hover:bg-blue-600 text-white rounded text-xs"
-                                  onClick={async () => {
-                                    const submission = latestInboundMap[row.user_id]
-                                    // Use form-scoped task status from the submission
-                                    const submissionTasks = submission?.tasks || []
-                                    const pendingSet = new Set(submissionTasks.filter((t: any) => t.status !== 'Cleared').map((t: any) => t.sub_task_id))
-                                    const completedSet = new Set(submissionTasks.filter((t: any) => t.status === 'Cleared').map((t: any) => t.sub_task_id))
-                                    const formName = row.form_name
-                                    const kind = row.kind
-                                    const createdAt = row.created_at || ''
-                                    const member = { edipi: m?.edipi || '', rank: m?.rank, first_name: m?.first_name, last_name: m?.last_name, company_id: m?.company_id, platoon_id: m?.platoon_id }
-                                    const tasksIds = submissionTasks.map((t: any) => t.sub_task_id)
-                                    const pendingBySection: Record<string, string[]> = {}
-                                    const allSectionNames = new Set<string>()
-                                    for (const tid of tasksIds) {
-                                      const label = taskLabels[tid]
-                                      const code = label?.section_name || ''
-                                      const name2 = code ? (sectionDisplayMap[code] || code) : ''
-                                      allSectionNames.add(name2)
-                                    }
-                                    for (const nm of allSectionNames) pendingBySection[nm] = []
-                                    for (const tid of tasksIds) {
-                                      if (!pendingSet.has(tid)) continue
-                                      const label = taskLabels[tid]
-                                      const code = label?.section_name || ''
-                                      const name2 = code ? (sectionDisplayMap[code] || code) : ''
-                                      pendingBySection[name2].push(label?.description || tid)
-                                    }
-                                    setPreviewPendingBySection(pendingBySection)
-                                    const completedRows: Array<{ section: string; task: string; note?: string; at?: string }> = []
-                                    // Get global progress for completion logs (historical tracking)
-                                    const progress = await getProgressByMember(row.user_id)
-                                    for (const tid of tasksIds) {
-                                      if (!completedSet.has(tid)) continue
-                                      const label = taskLabels[tid]
-                                      const code = label?.section_name || ''
-                                      const secName = code ? (sectionDisplayMap[code] || code) : ''
-                                      const entry = (progress.progress_tasks || []).find(t => String(t.sub_task_id) === String(tid)) as any
-                                      const lastLog = Array.isArray(entry?.logs) && entry.logs.length ? entry.logs[entry.logs.length - 1] : undefined
-                                      completedRows.push({ section: secName, task: (label?.description || tid), note: lastLog?.note, at: lastLog?.at })
-                                    }
-                                    setPreviewCompletedRows(completedRows)
-                                    setPreviewSubmission({ user_id: row.user_id, unit_id: user.unit_id, form_name: formName, kind, created_at: createdAt, member })
-                                  }}
+                                  onClick={() => handleViewDetails(row, m, latestInboundMap[row.user_id])}
                                 >
                                   View
                                 </button>
@@ -511,49 +517,7 @@ export default function SectionManagerDashboard() {
                               <td className="p-2">
                                 <button
                                   className="px-3 py-1 bg-github-blue hover:bg-blue-600 text-white rounded text-xs"
-                                  onClick={async () => {
-                                    const submission = latestOutboundMap[row.user_id]
-                                    // Use form-scoped task status from the submission
-                                    const submissionTasks = submission?.tasks || []
-                                    const pendingSet = new Set(submissionTasks.filter((t: any) => t.status !== 'Cleared').map((t: any) => t.sub_task_id))
-                                    const completedSet = new Set(submissionTasks.filter((t: any) => t.status === 'Cleared').map((t: any) => t.sub_task_id))
-                                    const formName = row.form_name
-                                    const kind = row.kind
-                                    const createdAt = row.created_at || ''
-                                    const member = { edipi: m?.edipi || '', rank: m?.rank, first_name: m?.first_name, last_name: m?.last_name, company_id: m?.company_id, platoon_id: m?.platoon_id }
-                                    const tasksIds = submissionTasks.map((t: any) => t.sub_task_id)
-                                    const pendingBySection: Record<string, string[]> = {}
-                                    const allSectionNames = new Set<string>()
-                                    for (const tid of tasksIds) {
-                                      const label = taskLabels[tid]
-                                      const code = label?.section_name || ''
-                                      const name2 = code ? (sectionDisplayMap[code] || code) : ''
-                                      allSectionNames.add(name2)
-                                    }
-                                    for (const nm of allSectionNames) pendingBySection[nm] = []
-                                    for (const tid of tasksIds) {
-                                      if (!pendingSet.has(tid)) continue
-                                      const label = taskLabels[tid]
-                                      const code = label?.section_name || ''
-                                      const name2 = code ? (sectionDisplayMap[code] || code) : ''
-                                      pendingBySection[name2].push(label?.description || tid)
-                                    }
-                                    setPreviewPendingBySection(pendingBySection)
-                                    const completedRows: Array<{ section: string; task: string; note?: string; at?: string }> = []
-                                    // Get global progress for completion logs (historical tracking)
-                                    const progress = await getProgressByMember(row.user_id)
-                                    for (const tid of tasksIds) {
-                                      if (!completedSet.has(tid)) continue
-                                      const label = taskLabels[tid]
-                                      const code = label?.section_name || ''
-                                      const secName = code ? (sectionDisplayMap[code] || code) : ''
-                                      const entry = (progress.progress_tasks || []).find(t => String(t.sub_task_id) === String(tid)) as any
-                                      const lastLog = Array.isArray(entry?.logs) && entry.logs.length ? entry.logs[entry.logs.length - 1] : undefined
-                                      completedRows.push({ section: secName, task: (label?.description || tid), note: lastLog?.note, at: lastLog?.at })
-                                    }
-                                    setPreviewCompletedRows(completedRows)
-                                    setPreviewSubmission({ user_id: row.user_id, unit_id: user.unit_id, form_name: formName, kind, created_at: createdAt, member })
-                                  }}
+                                  onClick={() => handleViewDetails(row, m, latestOutboundMap[row.user_id])}
                                 >
                                   View
                                 </button>

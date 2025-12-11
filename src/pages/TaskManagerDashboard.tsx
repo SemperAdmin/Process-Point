@@ -1053,7 +1053,7 @@ export default function TaskManagerDashboard() {
                               sub_task_id: tid,
                               description: (byId[tid]?.description || taskLabels[tid]?.description || tid),
                               // CRITICAL: Keep existing status, only update if this is the task being signed off
-                              status: (tid === actionSubTaskId ? 'Cleared' : (byId[tid]?.status || 'Pending')) as const,
+                              status: (tid === actionSubTaskId ? 'Cleared' : (byId[tid]?.status || 'Pending')) as 'Pending' | 'Cleared' | 'Skipped',
                             }))
                             // Calculate cleared count from submission's own tasks, not global progress
                             const submissionClearedSet = new Set(nextTasks.filter(t => t.status === 'Cleared').map(t => t.sub_task_id))
