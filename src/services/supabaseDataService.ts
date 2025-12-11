@@ -1,7 +1,6 @@
 import { supabase } from './supabaseClient'
 import { LocalUserProfile, MemberProgress } from './localDataService'
 import type { UnitForm } from '@/utils/formsStore'
-import type { MyItem } from '@/utils/myItemsStore'
 import type { MyFormSubmission } from '@/utils/myFormSubmissionsStore'
 
 export const sbGetUserByEdipi = async (edipi: string): Promise<LocalUserProfile | null> => {
@@ -123,41 +122,6 @@ export const sbDeleteForm = async (id: number): Promise<void> => {
   if (error) throw error
 }
 
-// ===== My Items Management =====
-
-export const sbListMyItems = async (user_id: string, kind?: 'Inbound' | 'Outbound'): Promise<MyItem[]> => {
-  let query = supabase
-    .from('my_items')
-    .select('*')
-    .eq('user_id', user_id)
-    .order('created_at', { ascending: false })
-
-  if (kind) {
-    query = query.eq('kind', kind)
-  }
-
-  const { data, error } = await query
-  if (error) throw error
-  return (data as any) || []
-}
-
-export const sbCreateMyItem = async (item: Omit<MyItem, 'id' | 'created_at'>): Promise<MyItem> => {
-  const { data, error } = await supabase
-    .from('my_items')
-    .insert(item as any)
-    .select()
-    .single()
-  if (error) throw error
-  return data as any
-}
-
-export const sbDeleteMyItem = async (id: number): Promise<void> => {
-  const { error } = await supabase
-    .from('my_items')
-    .delete()
-    .eq('id', id)
-  if (error) throw error
-}
 
 // ===== Form Submissions Management =====
 

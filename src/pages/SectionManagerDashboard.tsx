@@ -8,7 +8,7 @@ import { listPendingForSectionManager, listArchivedForUser } from '@/services/lo
 import { getRoleOverride } from '@/utils/localUsersStore'
 import { normalizeOrgRole, normalizeSectionRole } from '@/utils/roles'
 import { listSections } from '@/utils/unitStructure'
-import { listMyItems } from '@/utils/myItemsStore'
+
 
 export default function SectionManagerDashboard() {
   const { user } = useAuthStore()
@@ -159,33 +159,17 @@ export default function SectionManagerDashboard() {
       const sectionMemberIds = Array.from(new Set([...idsFromMap2, ...idsFromForms]))
       const inboundFromProgress = new Set(pending.filter(it => sectionMemberIds.includes(it.member_user_id)).map(it => it.member_user_id))
       const inboundFromForms = new Set((formsLocal || []).filter(f => f.kind === 'Inbound').map(f => f.user_id))
-      const inboundFromItems = new Set<string>()
       const detailMap: Record<string, { items: number; forms: number; pending: number; lastForm?: string; lastFormName?: string; lastFormKind?: string; lastFormCreatedAt?: string }> = {}
       for (const mid of sectionMemberIds) {
-        try {
-          const items = await listMyItems(mid, 'Inbound')
-          const itemsCount = (items || []).length
-          if (itemsCount) inboundFromItems.add(mid)
-          const formsCount = (formsLocal || []).filter(f => f.kind === 'Inbound' && f.user_id === mid).length
-          const inboundFormsForUser = (formsLocal || []).filter(f => f.kind === 'Inbound' && f.user_id === mid)
-          const lastForm = inboundFormsForUser.map(f => f.created_at || '').sort().slice(-1)[0] || undefined
-          const lastEntry = inboundFormsForUser.sort((a, b) => String(a.created_at || '') < String(b.created_at || '') ? -1 : 1).slice(-1)[0]
-          const lastFormName = lastEntry?.name || undefined
-          const lastFormKind = lastEntry?.kind || undefined
-          const lastFormCreatedAt = lastEntry?.created_at || undefined
-          const pendingCount = pending.filter(it => it.member_user_id === mid).length
-          detailMap[mid] = { items: itemsCount, forms: formsCount, pending: pendingCount, lastForm, lastFormName, lastFormKind, lastFormCreatedAt }
-        } catch {
-          const inboundFormsForUser = (formsLocal || []).filter(f => f.kind === 'Inbound' && f.user_id === mid)
-          const formsCount = inboundFormsForUser.length
-          const lastForm = inboundFormsForUser.map(f => f.created_at || '').sort().slice(-1)[0] || undefined
-          const lastEntry = inboundFormsForUser.sort((a, b) => String(a.created_at || '') < String(b.created_at || '') ? -1 : 1).slice(-1)[0]
-          const lastFormName = lastEntry?.name || undefined
-          const lastFormKind = lastEntry?.kind || undefined
-          const lastFormCreatedAt = lastEntry?.created_at || undefined
-          const pendingCount = pending.filter(it => it.member_user_id === mid).length
-          detailMap[mid] = { items: 0, forms: formsCount, pending: pendingCount, lastForm, lastFormName, lastFormKind, lastFormCreatedAt }
-        }
+        const inboundFormsForUser = (formsLocal || []).filter(f => f.kind === 'Inbound' && f.user_id === mid)
+        const formsCount = inboundFormsForUser.length
+        const lastForm = inboundFormsForUser.map(f => f.created_at || '').sort().slice(-1)[0] || undefined
+        const lastEntry = inboundFormsForUser.sort((a, b) => String(a.created_at || '') < String(b.created_at || '') ? -1 : 1).slice(-1)[0]
+        const lastFormName = lastEntry?.name || undefined
+        const lastFormKind = lastEntry?.kind || undefined
+        const lastFormCreatedAt = lastEntry?.created_at || undefined
+        const pendingCount = pending.filter(it => it.member_user_id === mid).length
+        detailMap[mid] = { items: 0, forms: formsCount, pending: pendingCount, lastForm, lastFormName, lastFormKind, lastFormCreatedAt }
       }
       setInboundMembers(sectionMemberIds)
       setInboundSourceMap(detailMap)
