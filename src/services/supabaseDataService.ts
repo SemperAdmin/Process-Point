@@ -224,6 +224,14 @@ export const sbDeleteSubmission = async (id: number): Promise<void> => {
   if (error) throw error
 }
 
+export const sbUpdateSubmission = async (id: number, patch: Partial<MyFormSubmission>): Promise<void> => {
+  const { error } = await supabase
+    .from('my_form_submissions')
+    .update(patch as any)
+    .eq('id', id)
+  if (error) throw error
+}
+
 // ===== Users Management =====
 
 export const sbListUsers = async (): Promise<LocalUserProfile[]> => {

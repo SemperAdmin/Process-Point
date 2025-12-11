@@ -11,7 +11,7 @@ import { listForms } from '@/utils/formsStore'
 import { supabase } from '@/services/supabaseClient'
 import { canonicalize } from '@/utils/json'
 import { sha256String } from '@/utils/crypto'
-import { sbUpsertProgress } from '@/services/supabaseDataService'
+import { sbUpsertProgress, sbListSubmissions, sbUpdateSubmission } from '@/services/supabaseDataService'
 import { triggerUpdateProgressDispatch } from '@/services/workflowService'
 
 export default function TaskManagerDashboard() {
@@ -970,6 +970,25 @@ export default function TaskManagerDashboard() {
 
                   if (import.meta.env.VITE_USE_SUPABASE === '1') {
                     await sbUpsertProgress(progress)
+                    try {
+                      const ruc = (user.unit_id || '').includes('-') ? (user.unit_id || '').split('-')[1] : (user.unit_id || '')
+                      const forms = await listForms(ruc)
+                      const affected = forms.filter(f => actionSubTaskId && f.task_ids.includes(actionSubTaskId))
+                      if (affected.length) {
+                        const subs = await sbListSubmissions(actionMemberId)
+                        for (const f of affected) {
+                          const ids = f.task_ids
+                          const total = ids.length
+                          const clearedSet = new Set((progress.progress_tasks || []).filter(t => t.status === 'Cleared').map(t => t.sub_task_id))
+                          const cleared = ids.filter(id => clearedSet.has(id)).length
+                          const status: 'In_Progress' | 'Completed' = total > 0 && cleared === total ? 'Completed' : 'In_Progress'
+                          const latest = subs.filter(s => s.form_id === f.id && s.kind === f.kind).sort((a,b)=>new Date(b.created_at).getTime()-new Date(a.created_at).getTime())[0]
+                          if (latest) {
+                            await sbUpdateSubmission(latest.id, { completed_count: cleared, total_count: total, status, task_ids: ids })
+                          }
+                        }
+                      }
+                    } catch {}
                   } else {
                     await triggerUpdateProgressDispatch({ progress })
                   }

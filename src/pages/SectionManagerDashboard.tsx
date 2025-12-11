@@ -84,13 +84,21 @@ export default function SectionManagerDashboard() {
           }
           setLatestInboundMap(latest)
 
-          // Build section form status rows directly from inbound submissions
           try {
+            const uidSet = Array.from(new Set(submissions.map(s => s.user_id)))
+            const clearedMap: Record<string, Set<string>> = {}
+            for (const uid of uidSet) {
+              try {
+                const progress = await getProgressByMember(uid)
+                clearedMap[uid] = new Set((progress.progress_tasks || []).filter((t: any) => t.status === 'Cleared').map((t: any) => t.sub_task_id))
+              } catch {}
+            }
             const rows: Array<{ user_id: string; edipi?: string; form_name: string; kind: 'Inbound' | 'Outbound'; total: number; cleared: number; status: 'In_Progress' | 'Completed'; created_at?: string; arrival_date?: string; departure_date?: string }> = []
             for (const s of submissions) {
               const ids = Array.isArray((s as any).task_ids) ? ((s as any).task_ids || []) : ((s.tasks || []).map((t: any) => t.sub_task_id))
-              const total = (s as any).total_count ?? ids.length
-              const cleared = (s as any).completed_count ?? 0
+              const total = ids.length
+              const clearedSet = clearedMap[s.user_id] || new Set<string>()
+              const cleared = ids.filter((id: string) => clearedSet.has(id)).length
               const status: 'In_Progress' | 'Completed' = total > 0 && cleared === total ? 'Completed' : 'In_Progress'
               rows.push({
                 user_id: s.user_id,
