@@ -497,7 +497,7 @@ export default function MyDashboard() {
                           return total > 0 && done < total
                         })
                         return rows.length ? rows.map(s => (
-                          <div key={`sub-${s.id}`} className="grid grid-cols-5 items-center border-t border-github-border text-gray-300">
+                          <div key={`sub-${s.id}`} className="grid grid-cols-5 items-center border-t border-github-border text-gray-300 hover:bg-red-900 hover:bg-opacity-30 transition-colors">
                             <div className="p-2">{s.form_name}</div>
                             <div className="p-2">{s.unit_id}</div>
                             <div className="p-2">{s.arrival_date || (arrivalDate || new Date().toISOString().slice(0,10))}</div>
@@ -584,7 +584,7 @@ export default function MyDashboard() {
                         </div>
                         <div className="text-sm">
                           {inboundFormsPendingSummary.filter(r => r.completed < r.total).map((r, i) => (
-                            <div key={`sum-${i}`} className="grid grid-cols-5 items-center border-t border-github-border text-gray-300">
+                            <div key={`sum-${i}`} className="grid grid-cols-5 items-center border-t border-github-border text-gray-300 hover:bg-red-900 hover:bg-opacity-30 transition-colors">
                               <div className="p-2">{r.formName}</div>
                               <div className="p-2">{(() => {
                                 const fid = forms.find(f => f.name === r.formName && f.kind === 'Inbound')?.id || 0
@@ -682,7 +682,7 @@ export default function MyDashboard() {
                         })
                         if (!inboundCompleted.length) return (<div className="text-gray-400 text-sm">None</div>)
                         return inboundCompleted.map(i => (
-                          <div key={`in-copy-${i.id}`} className="grid grid-cols-5 items-center border-t border-github-border text-gray-300">
+                          <div key={`in-copy-${i.id}`} className="grid grid-cols-5 items-center border-t border-github-border text-gray-300 hover:bg-red-900 hover:bg-opacity-30 transition-colors">
                             <div className="p-2">{i.form_name}</div>
                             <div className="p-2">{user?.unit_id || ''}</div>
                             <div className="p-2">{(i as any)?.arrival_date || (arrivalDate || new Date().toISOString().slice(0,10))}</div>
@@ -785,7 +785,7 @@ export default function MyDashboard() {
                             return total > 0 && done < total
                           })
                           return rows.length ? rows.map(s => (
-                            <div key={`sub-${s.id}`} className="grid grid-cols-5 items-center border-t border-github-border text-gray-300">
+                            <div key={`sub-${s.id}`} className="grid grid-cols-5 items-center border-t border-github-border text-gray-300 hover:bg-red-900 hover:bg-opacity-30 transition-colors">
                               <div className="p-2">{s.form_name}</div>
                               <div className="p-2">{s.unit_id}</div>
                               <div className="p-2">{s.departure_date || (departureDate || new Date().toISOString().slice(0,10))}</div>
@@ -872,7 +872,7 @@ export default function MyDashboard() {
                         </div>
                         <div className="text-sm">
                           {outboundFormsPendingSummary.filter(r => r.completed < r.total).map((r, i) => (
-                            <div key={`ob-sum-${i}`} className="grid grid-cols-5 items-center border-t border-github-border text-gray-300">
+                            <div key={`ob-sum-${i}`} className="grid grid-cols-5 items-center border-t border-github-border text-gray-300 hover:bg-red-900 hover:bg-opacity-30 transition-colors">
                               <div className="p-2">{r.formName}</div>
                               <div className="p-2">{(() => {
                                 const fid = forms.find(f => f.name === r.formName && f.kind === 'Outbound')?.id || 0
@@ -951,7 +951,7 @@ export default function MyDashboard() {
                           })
                           if (!completedRows.length) return (<div className="text-gray-400 text-sm">None</div>)
                           return completedRows.map(i => (
-                            <div key={`out-${i.id}`} className="grid grid-cols-6 items-center border-t border-github-border text-gray-300">
+                            <div key={`out-${i.id}`} className="grid grid-cols-6 items-center border-t border-github-border text-gray-300 hover:bg-red-900 hover:bg-opacity-30 transition-colors">
                               <div className="p-2">{i.form_name}</div>
                               <div className="p-2">{user?.unit_id || ''}</div>
                               <div className="p-2">{user?.edipi || ''}</div>
@@ -1206,7 +1206,7 @@ export default function MyDashboard() {
                         <div className="text-left p-2">When</div>
                       </div>
                       {previewCompletedRows.map((r, i) => (
-                        <div key={`row-${i}`} className="grid grid-cols-4 items-center border-t border-github-border text-gray-300">
+                        <div key={`row-${i}`} className="grid grid-cols-4 items-center border-t border-github-border text-gray-300 hover:bg-red-900 hover:bg-opacity-30 transition-colors">
                           <div className="p-2">{r.section || ''}</div>
                           <div className="p-2">{r.task}</div>
                           <div className="p-2">{[r.note, (r.by ? `— ${r.by}` : '')].filter(Boolean).join(' ')}</div>
