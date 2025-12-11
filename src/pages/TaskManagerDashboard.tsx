@@ -21,17 +21,18 @@ export default function TaskManagerDashboard() {
   const [taskLabels, setTaskLabels] = useState<Record<string, { section_name: string; description: string }>>({})
   const [sectionDisplayMap, setSectionDisplayMap] = useState<Record<string, string>>({})
   // Each entry is an array of { memberId, submissionId, date } for showing each submission separately
-  type SubmissionEntry = { memberId: string; submissionId: number; date?: string; formName?: string }
+  type SubmissionEntry = { memberId: string; submissionId: number; date?: string; formName?: string; cleared_at?: string; cleared_by?: string; note?: string }
   const [inboundGroups, setInboundGroups] = useState<Record<string, SubmissionEntry[]>>({})
   const [outboundGroups, setOutboundGroups] = useState<Record<string, SubmissionEntry[]>>({})
+  // Completed groups now also store submission details for log display
+  const [inboundCompletedGroups, setInboundCompletedGroups] = useState<Record<string, SubmissionEntry[]>>({})
+  const [outboundCompletedGroups, setOutboundCompletedGroups] = useState<Record<string, SubmissionEntry[]>>({})
   const [inboundSectionGroups, setInboundSectionGroups] = useState<Record<string, Array<{ subTaskId: string; members: string[] }>>>({})
   const [pendingByTask, setPendingByTask] = useState<Record<string, string[]>>({})
   const [completedByTask, setCompletedByTask] = useState<Record<string, string[]>>({})
-  const [inboundCompletedGroups, setInboundCompletedGroups] = useState<Record<string, string[]>>({})
   const [inboundSectionGroupsCompleted, setInboundSectionGroupsCompleted] = useState<Record<string, Array<{ subTaskId: string; members: string[] }>>>({})
   const [inboundView, setInboundView] = useState<'Pending' | 'Completed'>('Pending')
   const [outboundView, setOutboundView] = useState<'Pending' | 'Completed'>('Pending')
-  const [outboundCompletedGroups, setOutboundCompletedGroups] = useState<Record<string, string[]>>({})
   const [outboundSectionGroupsCompleted, setOutboundSectionGroupsCompleted] = useState<Record<string, Array<{ subTaskId: string; members: string[] }>>>({})
   const [sectionLabel, setSectionLabel] = useState('')
   const [scopedTasks, setScopedTasks] = useState<Array<{ section: string; description: string; location?: string; instructions?: string; responsible: string }>>([])
@@ -175,8 +176,8 @@ export default function TaskManagerDashboard() {
         }
       }
 
-      // Track each submission separately - array of { memberId, submissionId, date, formName }
-      type SubmissionEntry = { memberId: string; submissionId: number; date?: string; formName?: string }
+      // Track each submission separately - array of { memberId, submissionId, date, formName, and log fields }
+      type SubmissionEntry = { memberId: string; submissionId: number; date?: string; formName?: string; cleared_at?: string; cleared_by?: string; note?: string }
       const inboundByTask: Record<string, SubmissionEntry[]> = {}
       const inboundCompletedByTask: Record<string, SubmissionEntry[]> = {}
       const outboundByTask: Record<string, SubmissionEntry[]> = {}
@@ -217,14 +218,23 @@ export default function TaskManagerDashboard() {
             if (t.status === 'Cleared') {
               if (!allCompletedByTask[subId]) allCompletedByTask[subId] = new Set()
               allCompletedByTask[subId].add(memberId)
-              // Add to kind-specific completed list with submission details
+              // Add to kind-specific completed list with submission details including log info
+              const cleared_at = (t as any).cleared_at_timestamp || ''
+              const cleared_by_user_id = (t as any).cleared_by_user_id || ''
+              const cleared_by_edipi = (t as any).cleared_by_edipi || ''
+              // Look up cleared_by name from memberMap
+              const clearedByMember = cleared_by_user_id ? profiles[cleared_by_user_id] : undefined
+              const cleared_by = clearedByMember
+                ? [clearedByMember.rank, [clearedByMember.first_name, clearedByMember.last_name].filter(Boolean).join(' ')].filter(Boolean).join(' ')
+                : (cleared_by_edipi ? `EDIPI ${cleared_by_edipi}` : '')
+              const note = (t as any).note || ''
               if (kind === 'Inbound') {
                 if (!inboundCompletedByTask[subId]) inboundCompletedByTask[subId] = []
-                inboundCompletedByTask[subId].push({ memberId, submissionId, date: arrivalDate, formName })
+                inboundCompletedByTask[subId].push({ memberId, submissionId, date: arrivalDate, formName, cleared_at, cleared_by, note })
               }
               if (kind === 'Outbound') {
                 if (!outboundCompletedByTask[subId]) outboundCompletedByTask[subId] = []
-                outboundCompletedByTask[subId].push({ memberId, submissionId, date: departureDate, formName })
+                outboundCompletedByTask[subId].push({ memberId, submissionId, date: departureDate, formName, cleared_at, cleared_by, note })
               }
             }
           }
@@ -237,11 +247,9 @@ export default function TaskManagerDashboard() {
       } catch (err) { console.error(err) }
       // inboundByTask is now already an array of SubmissionEntry objects
       setInboundGroups(inboundByTask)
-      // For completed groups, we still need member arrays for the section grouping
-      const inboundCompletedGroupsArr = Object.fromEntries(Object.entries(inboundCompletedByTask).map(([k, v]) => [k, v.map(e => e.memberId)]))
-      setInboundCompletedGroups(inboundCompletedGroupsArr)
-      const outboundCompletedGroupsArr = Object.fromEntries(Object.entries(outboundCompletedByTask).map(([k, v]) => [k, v.map(e => e.memberId)]))
-      setOutboundCompletedGroups(outboundCompletedGroupsArr)
+      // Completed groups also use full SubmissionEntry arrays for log display
+      setInboundCompletedGroups(inboundCompletedByTask)
+      setOutboundCompletedGroups(outboundCompletedByTask)
       setOutboundGroups(outboundByTask)
       setPendingByTask(Object.fromEntries(Object.entries(allPendingByTask).map(([k, v]) => [k, Array.from(v)])))
       setCompletedByTask(Object.fromEntries(Object.entries(allCompletedByTask).map(([k, v]) => [k, Array.from(v)])))
@@ -263,7 +271,8 @@ export default function TaskManagerDashboard() {
       }
       setInboundSectionGroups(secGrouped)
       const secGroupedCompleted: Record<string, Array<{ subTaskId: string; members: string[] }>> = {}
-      for (const [subTaskId, members] of Object.entries(inboundCompletedGroupsArr)) {
+      for (const [subTaskId, entries] of Object.entries(inboundCompletedByTask)) {
+        const members = entries.map(e => e.memberId)
         const sid = subTaskMap[subTaskId]?.section_id
         const key = sid ? String(sid) : ''
         let secName = key ? (sectionDisplayMap[key] || key) : ''
@@ -278,7 +287,8 @@ export default function TaskManagerDashboard() {
       setInboundSectionGroupsCompleted(secGroupedCompleted)
 
       const obSecGroupedCompleted: Record<string, Array<{ subTaskId: string; members: string[] }>> = {}
-      for (const [subTaskId, members] of Object.entries(outboundCompletedGroupsArr)) {
+      for (const [subTaskId, entries] of Object.entries(outboundCompletedByTask)) {
+        const members = entries.map(e => e.memberId)
         const sid = subTaskMap[subTaskId]?.section_id
         const key = sid ? String(sid) : ''
         let secName = key ? (sectionDisplayMap[key] || key) : ''
@@ -508,84 +518,64 @@ export default function TaskManagerDashboard() {
                 )}
 
                 {inboundView === 'Completed' && (
-                  (() => {
-                    const byId = mySectionId != null ? (sectionDisplayMap[String(mySectionId)] || '') : ''
-                    const mySecCandidates = new Set([byId, sectionPrefix, sectionLabel].filter(Boolean))
-                    const entries = Object.entries(inboundSectionGroupsCompleted).filter(([sec]) => mySecCandidates.has(sec))
-                    if (!entries.length) {
-                      return (
-                        <div className="border border-github-border rounded-xl">
-                          <div className="px-4 py-3 border-b border-github-border flex items-center justify-between">
-                            <h3 className="text-white text-sm">{sectionLabel || 'Section'}</h3>
-                            <span className="inline-flex items-center px-2 py-0.5 text-xs border border-github-border rounded bg-green-700 bg-opacity-30 text-green-300">Completed</span>
-                          </div>
-                          <div className="p-4">
-                            <div className="overflow-x-auto">
-                              <table className="min-w-full table-fixed text-xs sm:text-sm">
-                                <thead className="text-gray-400">
-                                  <tr>
-                                    <th className="text-left p-2">Task</th>
-                                    <th className="text-left p-2">Member</th>
-                                    <th className="text-left p-2 hidden sm:table-cell">EDIPI</th>
-                                    <th className="text-left p-2">Company</th>
-                                    <th className="text-left p-2">Section</th>
-                                  </tr>
-                                </thead>
-                                <tbody></tbody>
-                              </table>
-                            </div>
-                          </div>
-                        </div>
-                      )
-                    }
-                    return entries.map(([secName, groups]) => (
-                      <div key={secName} className="border border-github-border rounded-xl">
+                  <div className="space-y-6">
+                  {scopedSubTasks.map(t => {
+                    const subTaskId = t.sub_task_id
+                    const label = taskLabels[subTaskId]
+                    const taskDesc = label?.description || subTaskId
+                    // Use inboundCompletedGroups which has full submission details
+                    const completedSubmissions = (inboundCompletedGroups[subTaskId] || [])
+                    const completedCount = completedSubmissions.length
+                    if (completedCount === 0) return null
+                    return (
+                      <div key={`completed-${subTaskId}`} className="border border-github-border rounded-xl">
                         <div className="px-4 py-3 border-b border-github-border flex items-center justify-between">
-                          <h3 className="text-white text-sm">{secName}</h3>
-                          <span className="inline-flex items-center px-2 py-0.5 text-xs border border-github-border rounded bg-green-700 bg-opacity-30 text-green-300">Completed</span>
+                          <h3 className="text-white text-sm">{taskDesc}</h3>
+                          <span className="inline-flex items-center px-2 py-0.5 text-xs border border-github-border rounded bg-green-700 bg-opacity-30 text-green-300">{completedCount}</span>
                         </div>
                         <div className="p-4">
                           <div className="overflow-x-auto">
-                            <table className="min-w-full table-fixed text-xs sm:text-sm">
-                              <thead className="text-gray-400">
-                                <tr>
-                                  <th className="text-left p-2">Type</th>
-                                  <th className="text-left p-2">Task</th>
-                                  <th className="text-left p-2">Member</th>
-                                  <th className="text-left p-2 hidden sm:table-cell">EDIPI</th>
-                                  <th className="text-left p-2">Company</th>
-                                  <th className="text-left p-2">Section</th>
-                                </tr>
-                              </thead>
-                              <tbody>
-                                {groups.map(({ subTaskId, members }) => {
-                                  const label = taskLabels[subTaskId]
-                                  const taskDesc = label?.description || subTaskId
-                                  return members.map(mid => {
-                                    const m = memberMap[mid]
-                                    const fullName = [m?.first_name, m?.last_name].filter(Boolean).join(' ')
-                                    const memberDisp = [m?.rank, fullName].filter(Boolean).join(' ') || mid
-                                    const edipi = m?.edipi || mid
-                                    const company = m?.company_id || ''
-                                    return (
-                                      <tr key={`${secName}-${subTaskId}-${mid}`} className="border-t border-github-border text-gray-300">
-                                        <td className="p-2">{formNameByTask[subTaskId] || 'Inbound'}</td>
-                                        <td className="p-2">{taskDesc}</td>
-                                        <td className="p-2 truncate">{memberDisp}</td>
-                                        <td className="p-2 hidden sm:table-cell">{edipi}</td>
-                                        <td className="p-2">{company}</td>
-                                        <td className="p-2">{secName}</td>
-                                      </tr>
-                                    )
-                                  })
-                                })}
-                              </tbody>
-                            </table>
+                          <table className="min-w-full table-fixed text-xs sm:text-sm">
+                            <thead className="text-gray-400">
+                              <tr>
+                                <th className="text-left p-2">Type</th>
+                                <th className="text-left p-2">Member</th>
+                                <th className="text-left p-2 hidden sm:table-cell">EDIPI</th>
+                                <th className="text-left p-2">Log</th>
+                                <th className="text-left p-2">When</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {completedSubmissions.map((entry, idx) => {
+                                const mid = entry.memberId
+                                const m = memberMap[mid]
+                                const fullName = [m?.first_name, m?.last_name].filter(Boolean).join(' ')
+                                const memberDisp = [m?.rank, fullName].filter(Boolean).join(' ') || mid
+                                const edipi = m?.edipi || mid
+                                // Format cleared_at date for display
+                                const whenDisplay = entry.cleared_at ? new Date(entry.cleared_at).toLocaleString() : '-'
+                                const logDisplay = entry.cleared_by || entry.note || '-'
+                                return (
+                                  <tr
+                                    key={`completed-${subTaskId}-${entry.submissionId}-${idx}`}
+                                    className="border-t border-github-border text-gray-300"
+                                  >
+                                    <td className="p-2">{entry.formName || formNameByTask[subTaskId] || 'Inbound'}</td>
+                                    <td className="p-2 truncate">{memberDisp}</td>
+                                    <td className="p-2 hidden sm:table-cell">{edipi}</td>
+                                    <td className="p-2">{logDisplay}</td>
+                                    <td className="p-2">{whenDisplay}</td>
+                                  </tr>
+                                )
+                              })}
+                            </tbody>
+                          </table>
                           </div>
                         </div>
                       </div>
-                    ))
-                  })()
+                    )
+                  })}
+                  </div>
                 )}
 
                 
@@ -681,84 +671,64 @@ export default function TaskManagerDashboard() {
                   </div>
                 )}
                 {outboundView === 'Completed' && (
-                  (() => {
-                    const byId = mySectionId != null ? (sectionDisplayMap[String(mySectionId)] || '') : ''
-                    const mySecCandidates = new Set([byId, sectionPrefix, sectionLabel].filter(Boolean))
-                    const entries = Object.entries(outboundSectionGroupsCompleted).filter(([sec]) => mySecCandidates.has(sec))
-                    if (!entries.length) {
-                      return (
-                        <div className="border border-github-border rounded-xl">
-                          <div className="px-4 py-3 border-b border-github-border flex items-center justify-between">
-                            <h3 className="text-white text-sm">{sectionLabel || 'Section'}</h3>
-                            <span className="inline-flex items-center px-2 py-0.5 text-xs border border-github-border rounded bg-green-700 bg-opacity-30 text-green-300">Completed</span>
-                          </div>
-                          <div className="p-4">
-                            <div className="overflow-x-auto">
-                              <table className="min-w-full table-fixed text-xs sm:text-sm">
-                                <thead className="text-gray-400">
-                                  <tr>
-                                    <th className="text-left p-2">Task</th>
-                                    <th className="text-left p-2">Member</th>
-                                    <th className="text-left p-2 hidden sm:table-cell">EDIPI</th>
-                                    <th className="text-left p-2">Company</th>
-                                    <th className="text-left p-2">Section</th>
-                                  </tr>
-                                </thead>
-                                <tbody></tbody>
-                              </table>
-                            </div>
-                          </div>
-                        </div>
-                      )
-                    }
-                    return entries.map(([secName, groups]) => (
-                      <div key={secName} className="border border-github-border rounded-xl">
+                  <div className="space-y-6">
+                  {scopedSubTasks.map(t => {
+                    const subTaskId = t.sub_task_id
+                    const label = taskLabels[subTaskId]
+                    const taskDesc = label?.description || subTaskId
+                    // Use outboundCompletedGroups which has full submission details
+                    const completedSubmissions = (outboundCompletedGroups[subTaskId] || [])
+                    const completedCount = completedSubmissions.length
+                    if (completedCount === 0) return null
+                    return (
+                      <div key={`ob-completed-${subTaskId}`} className="border border-github-border rounded-xl">
                         <div className="px-4 py-3 border-b border-github-border flex items-center justify-between">
-                          <h3 className="text-white text-sm">{secName}</h3>
-                          <span className="inline-flex items-center px-2 py-0.5 text-xs border border-github-border rounded bg-green-700 bg-opacity-30 text-green-300">Completed</span>
+                          <h3 className="text-white text-sm">{taskDesc}</h3>
+                          <span className="inline-flex items-center px-2 py-0.5 text-xs border border-github-border rounded bg-green-700 bg-opacity-30 text-green-300">{completedCount}</span>
                         </div>
                         <div className="p-4">
                           <div className="overflow-x-auto">
-                            <table className="min-w-full table-fixed text-xs sm:text-sm">
-                              <thead className="text-gray-400">
-                                <tr>
-                                  <th className="text-left p-2">Type</th>
-                                  <th className="text-left p-2">Task</th>
-                                  <th className="text-left p-2">Member</th>
-                                  <th className="text-left p-2 hidden sm:table-cell">EDIPI</th>
-                                  <th className="text-left p-2">Company</th>
-                                  <th className="text-left p-2">Section</th>
-                                </tr>
-                              </thead>
-                              <tbody>
-                                {groups.map(({ subTaskId, members }) => {
-                                  const label = taskLabels[subTaskId]
-                                  const taskDesc = label?.description || subTaskId
-                                  return members.map(mid => {
-                                    const m = memberMap[mid]
-                                    const fullName = [m?.first_name, m?.last_name].filter(Boolean).join(' ')
-                                    const memberDisp = [m?.rank, fullName].filter(Boolean).join(' ') || mid
-                                    const edipi = m?.edipi || mid
-                                    const company = m?.company_id || ''
-                                    return (
-                                      <tr key={`${secName}-${subTaskId}-${mid}`} className="border-t border-github-border text-gray-300">
-                                        <td className="p-2">{formNameByTask[subTaskId] || 'Outbound'}</td>
-                                        <td className="p-2">{taskDesc}</td>
-                                        <td className="p-2 truncate">{memberDisp}</td>
-                                        <td className="p-2 hidden sm:table-cell">{edipi}</td>
-                                        <td className="p-2">{company}</td>
-                                        <td className="p-2">{secName}</td>
-                                      </tr>
-                                    )
-                                  })
-                                })}
-                              </tbody>
-                            </table>
+                          <table className="min-w-full table-fixed text-xs sm:text-sm">
+                            <thead className="text-gray-400">
+                              <tr>
+                                <th className="text-left p-2">Type</th>
+                                <th className="text-left p-2">Member</th>
+                                <th className="text-left p-2 hidden sm:table-cell">EDIPI</th>
+                                <th className="text-left p-2">Log</th>
+                                <th className="text-left p-2">When</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {completedSubmissions.map((entry, idx) => {
+                                const mid = entry.memberId
+                                const m = memberMap[mid]
+                                const fullName = [m?.first_name, m?.last_name].filter(Boolean).join(' ')
+                                const memberDisp = [m?.rank, fullName].filter(Boolean).join(' ') || mid
+                                const edipi = m?.edipi || mid
+                                // Format cleared_at date for display
+                                const whenDisplay = entry.cleared_at ? new Date(entry.cleared_at).toLocaleString() : '-'
+                                const logDisplay = entry.cleared_by || entry.note || '-'
+                                return (
+                                  <tr
+                                    key={`ob-completed-${subTaskId}-${entry.submissionId}-${idx}`}
+                                    className="border-t border-github-border text-gray-300"
+                                  >
+                                    <td className="p-2">{entry.formName || formNameByTask[subTaskId] || 'Outbound'}</td>
+                                    <td className="p-2 truncate">{memberDisp}</td>
+                                    <td className="p-2 hidden sm:table-cell">{edipi}</td>
+                                    <td className="p-2">{logDisplay}</td>
+                                    <td className="p-2">{whenDisplay}</td>
+                                  </tr>
+                                )
+                              })}
+                            </tbody>
+                          </table>
                           </div>
                         </div>
                       </div>
-                    ))
-                  })()
+                    )
+                  })}
+                  </div>
                 )}
                 
 
@@ -1042,15 +1012,23 @@ export default function TaskManagerDashboard() {
                             : (targetSubmission.tasks || []).map(t => t.sub_task_id)
                           const total = ids.length
                           // Use form-scoped task status: preserve existing statuses and only update the current task
-                          const existingTasks = Array.isArray((targetSubmission as any).tasks) ? (((targetSubmission as any).tasks || []) as Array<{ sub_task_id: string; description?: string; status?: 'Pending' | 'Cleared' | 'Skipped' }>) : []
-                          const byId: Record<string, { sub_task_id: string; description?: string; status?: 'Pending' | 'Cleared' | 'Skipped' }> = {}
+                          const existingTasks = Array.isArray((targetSubmission as any).tasks) ? (((targetSubmission as any).tasks || []) as Array<{ sub_task_id: string; description?: string; status?: 'Pending' | 'Cleared' | 'Skipped'; cleared_by_user_id?: string; cleared_by_edipi?: string; cleared_at_timestamp?: string; note?: string }>) : []
+                          const byId: Record<string, { sub_task_id: string; description?: string; status?: 'Pending' | 'Cleared' | 'Skipped'; cleared_by_user_id?: string; cleared_by_edipi?: string; cleared_at_timestamp?: string; note?: string }> = {}
                           for (const t of existingTasks) byId[String(t.sub_task_id)] = t
-                          const nextTasks = ids.map(tid => ({
-                            sub_task_id: tid,
-                            description: (byId[tid]?.description || taskLabels[tid]?.description || tid),
-                            // CRITICAL: Keep existing status, only update if this is the task being signed off
-                            status: (tid === actionSubTaskId ? 'Cleared' : (byId[tid]?.status || 'Pending')) as 'Pending' | 'Cleared' | 'Skipped',
-                          }))
+                          const nextTasks = ids.map(tid => {
+                            const isBeingCleared = tid === actionSubTaskId
+                            return {
+                              sub_task_id: tid,
+                              description: (byId[tid]?.description || taskLabels[tid]?.description || tid),
+                              // CRITICAL: Keep existing status, only update if this is the task being signed off
+                              status: (isBeingCleared ? 'Cleared' : (byId[tid]?.status || 'Pending')) as 'Pending' | 'Cleared' | 'Skipped',
+                              // Include log fields when clearing
+                              cleared_by_user_id: isBeingCleared ? user.user_id : byId[tid]?.cleared_by_user_id,
+                              cleared_by_edipi: isBeingCleared ? user.edipi : byId[tid]?.cleared_by_edipi,
+                              cleared_at_timestamp: isBeingCleared ? now : byId[tid]?.cleared_at_timestamp,
+                              note: isBeingCleared ? note : byId[tid]?.note,
+                            }
+                          })
                           // Calculate cleared count from submission's own tasks, not global progress
                           const submissionClearedSet = new Set(nextTasks.filter(t => t.status === 'Cleared').map(t => t.sub_task_id))
                           const cleared = ids.filter(id => submissionClearedSet.has(id)).length
@@ -1069,14 +1047,21 @@ export default function TaskManagerDashboard() {
                             const total = ids.length
                             const latest = subs.filter(s => s.form_id === f.id && s.kind === f.kind).sort((a,b)=>new Date(b.created_at).getTime()-new Date(a.created_at).getTime())[0]
                             if (latest) {
-                              const existingTasks = Array.isArray((latest as any).tasks) ? (((latest as any).tasks || []) as Array<{ sub_task_id: string; description?: string; status?: 'Pending' | 'Cleared' | 'Skipped' }>) : []
-                              const byId: Record<string, { sub_task_id: string; description?: string; status?: 'Pending' | 'Cleared' | 'Skipped' }> = {}
+                              const existingTasks = Array.isArray((latest as any).tasks) ? (((latest as any).tasks || []) as Array<{ sub_task_id: string; description?: string; status?: 'Pending' | 'Cleared' | 'Skipped'; cleared_by_user_id?: string; cleared_by_edipi?: string; cleared_at_timestamp?: string; note?: string }>) : []
+                              const byId: Record<string, { sub_task_id: string; description?: string; status?: 'Pending' | 'Cleared' | 'Skipped'; cleared_by_user_id?: string; cleared_by_edipi?: string; cleared_at_timestamp?: string; note?: string }> = {}
                               for (const t of existingTasks) byId[String(t.sub_task_id)] = t
-                              const nextTasks = ids.map(tid => ({
-                                sub_task_id: tid,
-                                description: (byId[tid]?.description || taskLabels[tid]?.description || tid),
-                                status: (tid === actionSubTaskId ? 'Cleared' : (byId[tid]?.status || 'Pending')) as 'Pending' | 'Cleared' | 'Skipped',
-                              }))
+                              const nextTasks = ids.map(tid => {
+                                const isBeingCleared = tid === actionSubTaskId
+                                return {
+                                  sub_task_id: tid,
+                                  description: (byId[tid]?.description || taskLabels[tid]?.description || tid),
+                                  status: (isBeingCleared ? 'Cleared' : (byId[tid]?.status || 'Pending')) as 'Pending' | 'Cleared' | 'Skipped',
+                                  cleared_by_user_id: isBeingCleared ? user.user_id : byId[tid]?.cleared_by_user_id,
+                                  cleared_by_edipi: isBeingCleared ? user.edipi : byId[tid]?.cleared_by_edipi,
+                                  cleared_at_timestamp: isBeingCleared ? now : byId[tid]?.cleared_at_timestamp,
+                                  note: isBeingCleared ? note : byId[tid]?.note,
+                                }
+                              })
                               const submissionClearedSet = new Set(nextTasks.filter(t => t.status === 'Cleared').map(t => t.sub_task_id))
                               const cleared = ids.filter(id => submissionClearedSet.has(id)).length
                               const status: 'In_Progress' | 'Completed' = total > 0 && cleared === total ? 'Completed' : 'In_Progress'

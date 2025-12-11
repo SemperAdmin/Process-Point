@@ -4,6 +4,11 @@ export type MyFormSubmissionTask = {
   sub_task_id: string
   description: string
   status: 'Pending' | 'Cleared' | 'Skipped'
+  // Log fields for when task is cleared
+  cleared_by_user_id?: string
+  cleared_by_edipi?: string
+  cleared_at_timestamp?: string
+  note?: string
 }
 
 export type MyFormSubmission = {
