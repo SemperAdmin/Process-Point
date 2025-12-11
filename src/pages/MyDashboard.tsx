@@ -53,10 +53,16 @@ export default function MyDashboard() {
   const [unitOptions, setUnitOptions] = useState<Array<{ id: string; name: string }>>([])
   const [formCompletion, setFormCompletion] = useState<Record<number, { completed: number; total: number }>>({})
   const inboundFormsPendingSummary = useMemo(() => {
-    const clearedSet = new Set(memberTasks.filter(t => t.status === 'Cleared').map(t => t.sub_task_id))
-    const pendingSet = new Set(memberTasks.filter(t => t.status === 'Pending').map(t => t.sub_task_id))
     const list: Array<{ formName: string; status: 'In_Progress' | 'Completed'; completed: number; total: number; sections: string[] }> = []
     for (const f of forms.filter(ff => ff.kind === 'Inbound')) {
+      const latest = mySubmissions
+        .filter(s => s.form_id === f.id && s.kind === f.kind)
+        .sort((a,b)=>new Date(b.created_at).getTime()-new Date(a.created_at).getTime())[0]
+
+      // Use form-scoped task status from the submission
+      const clearedSet = new Set((latest?.tasks || []).filter(t => t.status === 'Cleared').map(t => t.sub_task_id))
+      const pendingSet = new Set((latest?.tasks || []).filter(t => t.status === 'Pending').map(t => t.sub_task_id))
+
       const rc = formCompletion[f.id]
       const total = rc?.total ?? f.task_ids.length
       const completed = rc?.completed ?? 0
@@ -73,13 +79,19 @@ export default function MyDashboard() {
       list.push({ formName: f.name, status, completed, total, sections: Array.from(sects).filter(Boolean) })
     }
     return list
-  }, [forms, formCompletion, memberTasks, taskLabels, sectionDisplayMap])
+  }, [forms, formCompletion, mySubmissions, taskLabels, sectionDisplayMap])
 
   const outboundFormsPendingSummary = useMemo(() => {
-    const clearedSet = new Set(memberTasks.filter(t => t.status === 'Cleared').map(t => t.sub_task_id))
-    const pendingSet = new Set(memberTasks.filter(t => t.status === 'Pending').map(t => t.sub_task_id))
     const list: Array<{ formName: string; status: 'In_Progress' | 'Completed'; completed: number; total: number; sections: string[] }> = []
     for (const f of forms.filter(ff => ff.kind === 'Outbound')) {
+      const latest = mySubmissions
+        .filter(s => s.form_id === f.id && s.kind === f.kind)
+        .sort((a,b)=>new Date(b.created_at).getTime()-new Date(a.created_at).getTime())[0]
+
+      // Use form-scoped task status from the submission
+      const clearedSet = new Set((latest?.tasks || []).filter(t => t.status === 'Cleared').map(t => t.sub_task_id))
+      const pendingSet = new Set((latest?.tasks || []).filter(t => t.status === 'Pending').map(t => t.sub_task_id))
+
       const rc = formCompletion[f.id]
       const total = rc?.total ?? f.task_ids.length
       const completed = rc?.completed ?? 0
@@ -96,23 +108,32 @@ export default function MyDashboard() {
       list.push({ formName: f.name, status, completed, total, sections: Array.from(sects).filter(Boolean) })
     }
     return list
-  }, [forms, formCompletion, memberTasks, taskLabels, sectionDisplayMap])
+  }, [forms, formCompletion, mySubmissions, taskLabels, sectionDisplayMap])
 
   useEffect(() => {
     const comp: Record<number, { completed: number; total: number }> = {}
-    const clearedSet = new Set(memberTasks.filter(t => t.status === 'Cleared').map(t => t.sub_task_id))
     for (const f of forms) {
       const latest = mySubmissions
         .filter(s => s.form_id === f.id && s.kind === f.kind)
         .sort((a,b)=>new Date(b.created_at).getTime()-new Date(a.created_at).getTime())[0]
-      const fallbackTotal = f.task_ids.length
-      const fallbackDone = f.task_ids.filter(tid => clearedSet.has(tid)).length
-      const total = typeof (latest as any)?.total_count === 'number' ? Number((latest as any).total_count) : fallbackTotal
-      const completed = typeof (latest as any)?.completed_count === 'number' ? Number((latest as any).completed_count) : fallbackDone
-      comp[f.id] = { completed, total }
+
+      if (latest) {
+        // Calculate completion from the submission's own task array (form-scoped)
+        const submissionClearedSet = new Set(
+          (latest.tasks || []).filter(t => t.status === 'Cleared').map(t => t.sub_task_id)
+        )
+        const fallbackTotal = f.task_ids.length
+        const fallbackDone = f.task_ids.filter(tid => submissionClearedSet.has(tid)).length
+        const total = typeof (latest as any)?.total_count === 'number' ? Number((latest as any).total_count) : fallbackTotal
+        const completed = typeof (latest as any)?.completed_count === 'number' ? Number((latest as any).completed_count) : fallbackDone
+        comp[f.id] = { completed, total }
+      } else {
+        // No submission for this form yet
+        comp[f.id] = { completed: 0, total: f.task_ids.length }
+      }
     }
     setFormCompletion(comp)
-  }, [forms, mySubmissions, memberTasks])
+  }, [forms, mySubmissions])
 
   const pendingListRows = useMemo(() => {
     if (!user) return [] as Array<{ key: string; name: string; unit: string; created: string; formId: number; kind: 'Inbound' }>
