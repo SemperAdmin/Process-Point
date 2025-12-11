@@ -5,7 +5,7 @@ import BrandMark from '@/components/BrandMark'
 import { fetchJson, LocalUserProfile, UsersIndexEntry, getChecklistByUnit, getProgressByMember } from '@/services/localDataService'
 import { sbListUsers, sbListSubmissionsByUnit, sbListMemberFormCompletion, sbListInboundSubmissionsByPlatoon } from '@/services/supabaseDataService'
 import { listPendingForSectionManager, listArchivedForUser } from '@/services/localDataService'
-import { getRoleOverride } from '@/utils/localUsersStore'
+import { getRoleOverride, setUserRoleOverride } from '@/utils/localUsersStore'
 import { normalizeOrgRole, normalizeSectionRole } from '@/utils/roles'
 import { listSections } from '@/utils/unitStructure'
 import { MyFormSubmission, MyFormSubmissionTask } from '@/utils/myFormSubmissionsStore'
@@ -13,11 +13,14 @@ import { MyFormSubmission, MyFormSubmissionTask } from '@/utils/myFormSubmission
 
 export default function SectionManagerDashboard() {
   const { user } = useAuthStore()
-  const [tab, setTab] = useState<'inbound' | 'outbound' | 'forms'>('inbound')
+  const [tab, setTab] = useState<'inbound' | 'outbound' | 'members'>('inbound')
   const [inbound, setInbound] = useState<{ member_user_id: string; sub_task_id: string }[]>([])
   const [outbound, setOutbound] = useState<{ member_user_id: string; sub_task_id: string; cleared_at_timestamp?: string }[]>([])
   const [memberMap, setMemberMap] = useState<Record<string, LocalUserProfile>>({})
   const [sectionLabel, setSectionLabel] = useState('')
+  const [sectionMembers, setSectionMembers] = useState<LocalUserProfile[]>([])
+  const [editingMember, setEditingMember] = useState<string | null>(null)
+  const [editMemberRole, setEditMemberRole] = useState<'Section_Manager' | 'Member'>('Member')
   const [sectionForms, setSectionForms] = useState<Array<{ user_id: string; edipi?: string; name: string; kind: string; created_at?: string }>>([])
   const [inboundMembers, setInboundMembers] = useState<string[]>([])
   const [inboundSourceMap, setInboundSourceMap] = useState<Record<string, { items: number; forms: number; pending: number; lastForm?: string; lastFormName?: string; lastFormKind?: string; lastFormCreatedAt?: string }>>({})
@@ -235,6 +238,14 @@ export default function SectionManagerDashboard() {
       }
       setInboundMembers(sectionMemberIds)
       setInboundSourceMap(detailMap)
+
+      // Build section members list for Members tab
+      const mySecKey2 = String(user.platoon_id || '')
+      const members = Object.values(map).filter(p =>
+        p.unit_id === user.unit_id &&
+        String(p.platoon_id || '') === mySecKey2
+      )
+      setSectionMembers(members)
     }
     load()
   }, [user])
@@ -273,6 +284,12 @@ export default function SectionManagerDashboard() {
               className={`px-4 py-3 text-sm ${tab === 'outbound' ? 'text-white border-b-2 border-github-blue' : 'text-gray-400'}`}
             >
               Outbound
+            </button>
+            <button
+              onClick={() => setTab('members')}
+              className={`px-4 py-3 text-sm ${tab === 'members' ? 'text-white border-b-2 border-github-blue' : 'text-gray-400'}`}
+            >
+              Members
             </button>
           </div>
           <div className="p-6">
@@ -619,6 +636,83 @@ export default function SectionManagerDashboard() {
                     </div>
                   </div>
                 )}
+              </div>
+            )}
+            {tab === 'members' && (
+              <div className="space-y-6">
+                <div className="text-gray-300">Members in your section - {sectionLabel}</div>
+                <div className="overflow-x-auto">
+                  <table className="min-w-full table-fixed text-xs sm:text-sm">
+                    <thead className="text-gray-400">
+                      <tr>
+                        <th className="text-left p-2">Member</th>
+                        <th className="text-left p-2 hidden sm:table-cell">EDIPI</th>
+                        <th className="text-left p-2">Role</th>
+                        <th className="text-left p-2">Action</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {sectionMembers.map(p => {
+                        const roleOverride = getRoleOverride(p.edipi)
+                        const role = normalizeOrgRole(roleOverride?.org_role) || normalizeOrgRole(p.org_role) || 'Member'
+                        const name = [p.first_name, p.last_name].filter(Boolean).join(' ')
+                        return (
+                          <tr key={p.user_id} className="border-t border-github-border text-gray-300">
+                            <td className="p-2 truncate">{[p.rank, name].filter(Boolean).join(' ')}</td>
+                            <td className="p-2 hidden sm:table-cell">{p.edipi || ''}</td>
+                            <td className="p-2 whitespace-nowrap">{role === 'Section_Manager' ? 'Sec Mgr' : role}</td>
+                            <td className="p-2">
+                              {editingMember === p.edipi ? (
+                                <div className="flex items-center gap-2">
+                                  <select
+                                    value={editMemberRole}
+                                    onChange={e => setEditMemberRole(e.target.value as any)}
+                                    className="px-2 py-1 text-xs bg-github-dark border border-github-border rounded text-white"
+                                  >
+                                    <option value="Section_Manager">Section Manager</option>
+                                    <option value="Member">Member</option>
+                                  </select>
+                                  <button
+                                    onClick={() => {
+                                      if (p.edipi) {
+                                        setUserRoleOverride(p.edipi, editMemberRole)
+                                        // Update local state to reflect change
+                                        setSectionMembers(prev => prev.map(m =>
+                                          m.edipi === p.edipi ? { ...m, org_role: editMemberRole } : m
+                                        ))
+                                      }
+                                      setEditingMember(null)
+                                    }}
+                                    className="px-2 py-1 bg-github-blue hover:bg-blue-600 text-white rounded text-xs"
+                                  >
+                                    Save
+                                  </button>
+                                  <button
+                                    onClick={() => setEditingMember(null)}
+                                    className="px-2 py-1 bg-gray-600 hover:bg-gray-700 text-white rounded text-xs"
+                                  >
+                                    Cancel
+                                  </button>
+                                </div>
+                              ) : (
+                                <button
+                                  onClick={() => {
+                                    setEditingMember(p.edipi || null)
+                                    const currentRole = normalizeOrgRole(getRoleOverride(p.edipi)?.org_role) || normalizeOrgRole(p.org_role)
+                                    setEditMemberRole(currentRole === 'Section_Manager' ? 'Section_Manager' : 'Member')
+                                  }}
+                                  className="px-3 py-1 bg-semper-gold hover:bg-yellow-600 text-black rounded text-xs"
+                                >
+                                  Edit
+                                </button>
+                              )}
+                            </td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
               </div>
             )}
           </div>
