@@ -52,12 +52,24 @@ export default function MyDashboard() {
   const [selectedUnit, setSelectedUnit] = useState<string>('')
   const [unitOptions, setUnitOptions] = useState<Array<{ id: string; name: string }>>([])
   const [formCompletion, setFormCompletion] = useState<Record<number, { completed: number; total: number }>>({})
+
+  // Memoized map of latest submissions per form+kind to avoid repeated filter/sort operations
+  const latestSubmissionsMap = useMemo(() => {
+    const map = new Map<string, MyFormSubmission>()
+    for (const s of mySubmissions) {
+      const key = `${s.form_id}-${s.kind}`
+      const existing = map.get(key)
+      if (!existing || new Date(s.created_at).getTime() > new Date(existing.created_at).getTime()) {
+        map.set(key, s)
+      }
+    }
+    return map
+  }, [mySubmissions])
+
   const inboundFormsPendingSummary = useMemo(() => {
     const list: Array<{ formName: string; status: 'In_Progress' | 'Completed'; completed: number; total: number; sections: string[] }> = []
     for (const f of forms.filter(ff => ff.kind === 'Inbound')) {
-      const latest = mySubmissions
-        .filter(s => s.form_id === f.id && s.kind === f.kind)
-        .sort((a,b)=>new Date(b.created_at).getTime()-new Date(a.created_at).getTime())[0]
+      const latest = latestSubmissionsMap.get(`${f.id}-${f.kind}`)
 
       // Use form-scoped task status from the submission
       const clearedSet = new Set((latest?.tasks || []).filter(t => t.status === 'Cleared').map(t => t.sub_task_id))
@@ -79,14 +91,12 @@ export default function MyDashboard() {
       list.push({ formName: f.name, status, completed, total, sections: Array.from(sects).filter(Boolean) })
     }
     return list
-  }, [forms, formCompletion, mySubmissions, taskLabels, sectionDisplayMap])
+  }, [forms, formCompletion, latestSubmissionsMap, taskLabels, sectionDisplayMap])
 
   const outboundFormsPendingSummary = useMemo(() => {
     const list: Array<{ formName: string; status: 'In_Progress' | 'Completed'; completed: number; total: number; sections: string[] }> = []
     for (const f of forms.filter(ff => ff.kind === 'Outbound')) {
-      const latest = mySubmissions
-        .filter(s => s.form_id === f.id && s.kind === f.kind)
-        .sort((a,b)=>new Date(b.created_at).getTime()-new Date(a.created_at).getTime())[0]
+      const latest = latestSubmissionsMap.get(`${f.id}-${f.kind}`)
 
       // Use form-scoped task status from the submission
       const clearedSet = new Set((latest?.tasks || []).filter(t => t.status === 'Cleared').map(t => t.sub_task_id))
@@ -108,14 +118,12 @@ export default function MyDashboard() {
       list.push({ formName: f.name, status, completed, total, sections: Array.from(sects).filter(Boolean) })
     }
     return list
-  }, [forms, formCompletion, mySubmissions, taskLabels, sectionDisplayMap])
+  }, [forms, formCompletion, latestSubmissionsMap, taskLabels, sectionDisplayMap])
 
   useEffect(() => {
     const comp: Record<number, { completed: number; total: number }> = {}
     for (const f of forms) {
-      const latest = mySubmissions
-        .filter(s => s.form_id === f.id && s.kind === f.kind)
-        .sort((a,b)=>new Date(b.created_at).getTime()-new Date(a.created_at).getTime())[0]
+      const latest = latestSubmissionsMap.get(`${f.id}-${f.kind}`)
 
       if (latest) {
         // Calculate completion from the submission's own task array (form-scoped)
@@ -133,7 +141,7 @@ export default function MyDashboard() {
       }
     }
     setFormCompletion(comp)
-  }, [forms, mySubmissions])
+  }, [forms, latestSubmissionsMap])
 
   const pendingListRows = useMemo(() => {
     if (!user) return [] as Array<{ key: string; name: string; unit: string; created: string; formId: number; kind: 'Inbound' }>
