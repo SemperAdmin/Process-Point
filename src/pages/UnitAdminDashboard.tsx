@@ -31,8 +31,42 @@ export default function UnitAdminDashboard() {
     return (user?.unit_id || '').includes('-') ? (user?.unit_id || '').split('-')[1] : (user?.unit_id || '')
   }
   const [managedRuc, setManagedRuc] = useState(getInitialRuc())
+  const [rucSwitching, setRucSwitching] = useState(false)
   const unitId = managedRuc
   const rucDisplay = managedRuc
+
+  // Function to clear all RUC-specific state when switching
+  const clearRucState = () => {
+    setSections([])
+    setTasks([])
+    setForms([])
+    setCompanies([])
+    setCompanyRows([])
+    setSectionOptions([])
+    setEdipiMap({})
+    setAssignedUnits([])
+    setSelectedCompany(undefined)
+    setSelectedPlatoon(undefined)
+    setDefaultEdipis([])
+    setPlatoons([])
+  }
+
+  // Handler for RUC switching with proper state isolation
+  const handleRucSwitch = async (newRuc: string) => {
+    if (newRuc === managedRuc) return
+
+    // Start switching - show loading state
+    setRucSwitching(true)
+
+    // Clear all RUC-specific state to prevent data crossing
+    clearRucState()
+
+    // Update the managed RUC
+    setManagedRuc(newRuc)
+    localStorage.setItem('selectedAdminRuc', newRuc)
+
+    // Loading state will be cleared by the useEffect when data loads
+  }
   const [companies, setCompanies] = useState<string[]>([])
   const [companyRows, setCompanyRows] = useState<UnitCompany[]>([])
   const [newCompanyId, setNewCompanyId] = useState('')
@@ -90,41 +124,49 @@ export default function UnitAdminDashboard() {
     const next = Array.from(new Set([...preset, own].filter(Boolean)))
     setAssignedUnits(next)
     setAssignedUnitsForRuc(user?.edipi || '', managedRuc, next)
-    if (!unitId) return
+    if (!unitId) {
+      setRucSwitching(false)
+      return
+    }
     const load = async () => {
-      const secs = await listSections(unitId)
-      setSections(secs)
-      setSectionOptions(secs)
-      const tsks = await listSubTasks(unitId)
-      setTasks(tsks)
-      setForms(await listForms(unitId))
-      const comps = await listCompanies(unitId)
-      setCompanyRows(comps)
-      const ids = comps.map(c => c.company_id)
-      setCompanies(ids)
-      if (!selectedCompany && ids.length) setSelectedCompany(ids[0])
+      try {
+        const secs = await listSections(unitId)
+        setSections(secs)
+        setSectionOptions(secs)
+        const tsks = await listSubTasks(unitId)
+        setTasks(tsks)
+        setForms(await listForms(unitId))
+        const comps = await listCompanies(unitId)
+        setCompanyRows(comps)
+        const ids = comps.map(c => c.company_id)
+        setCompanies(ids)
+        if (!selectedCompany && ids.length) setSelectedCompany(ids[0])
 
-      if (tsks.length === 0) {
-        const fList = await listForms(unitId)
-        const allIds = Array.from(new Set(fList.flatMap(f => f.task_ids)))
-        if (allIds.length) {
-          const sectionByCode = new Map<string, number>()
-          for (const s of secs) {
-            sectionByCode.set(s.section_name, s.id)
-            const disp = (s as any).display_name
-            if (disp) sectionByCode.set(String(disp), s.id)
+        if (tsks.length === 0) {
+          const fList = await listForms(unitId)
+          const allIds = Array.from(new Set(fList.flatMap(f => f.task_ids)))
+          if (allIds.length) {
+            const sectionByCode = new Map<string, number>()
+            for (const s of secs) {
+              sectionByCode.set(s.section_name, s.id)
+              const disp = (s as any).display_name
+              if (disp) sectionByCode.set(String(disp), s.id)
+            }
+            for (const tid of allIds) {
+              const prefix = String(tid).split('-')[0]
+              const sid = sectionByCode.get(prefix) || secs[0]?.id || 0
+              if (!sid) continue
+              try {
+                await createSubTask({ unit_id: unitId, section_id: sid, sub_task_id: tid, description: String(tid), responsible_user_ids: defaultEdipis })
+              } catch {}
+            }
+            const refreshed = await listSubTasks(unitId)
+            setTasks(refreshed)
           }
-          for (const tid of allIds) {
-            const prefix = String(tid).split('-')[0]
-            const sid = sectionByCode.get(prefix) || secs[0]?.id || 0
-            if (!sid) continue
-            try {
-              await createSubTask({ unit_id: unitId, section_id: sid, sub_task_id: tid, description: String(tid), responsible_user_ids: defaultEdipis })
-            } catch {}
-          }
-          const refreshed = await listSubTasks(unitId)
-          setTasks(refreshed)
         }
+      } finally {
+        // Clear switching state when data loading completes
+        setRucSwitching(false)
       }
     }
     load()
@@ -149,8 +191,18 @@ export default function UnitAdminDashboard() {
         if (user?.edipi) {
           const rucs = await sbGetAdminRucs(user.edipi)
           setAdminRucs(rucs)
-          // If no stored RUC preference and user has RUCs, default to first one
-          if (!localStorage.getItem('selectedAdminRuc') && rucs.length > 0 && !managedRuc) {
+
+          const storedRuc = localStorage.getItem('selectedAdminRuc')
+          const rucList = rucs.map(r => r.ruc)
+
+          // Validate stored RUC is still accessible to this admin
+          if (storedRuc && !rucList.includes(storedRuc) && rucs.length > 0) {
+            // Stored RUC is no longer valid for this admin, switch to first available
+            const defaultRuc = rucs[0].ruc
+            setManagedRuc(defaultRuc)
+            localStorage.setItem('selectedAdminRuc', defaultRuc)
+          } else if (!storedRuc && rucs.length > 0 && !managedRuc) {
+            // No stored RUC preference and user has RUCs, default to first one
             const defaultRuc = rucs[0].ruc
             setManagedRuc(defaultRuc)
             localStorage.setItem('selectedAdminRuc', defaultRuc)
@@ -270,12 +322,9 @@ export default function UnitAdminDashboard() {
               ) : (
                 <select
                   value={managedRuc}
-                  onChange={(e) => {
-                    const newRuc = e.target.value
-                    setManagedRuc(newRuc)
-                    localStorage.setItem('selectedAdminRuc', newRuc)
-                  }}
-                  className="bg-github-gray border border-github-border text-white rounded px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-github-blue"
+                  onChange={(e) => handleRucSwitch(e.target.value)}
+                  disabled={rucSwitching}
+                  className="bg-github-gray border border-github-border text-white rounded px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-github-blue disabled:opacity-50"
                 >
                   {adminRucs.map((ruc) => (
                     <option key={ruc.ruc} value={ruc.ruc}>
@@ -284,13 +333,24 @@ export default function UnitAdminDashboard() {
                   ))}
                 </select>
               )}
+              {rucSwitching && (
+                <span className="text-gray-400 text-sm animate-pulse">Loading...</span>
+              )}
               <span className="text-gray-400 text-xs">Use tabs below to manage all units under this RUC</span>
             </div>
           </div>
         </div>
       )}
       <main className="px-4 sm:px-6 lg:px-8 py-8 w-full">
-        <div className="bg-github-gray bg-opacity-10 border border-github-border rounded-xl">
+        <div className="bg-github-gray bg-opacity-10 border border-github-border rounded-xl relative">
+          {rucSwitching && (
+            <div className="absolute inset-0 bg-github-dark bg-opacity-80 flex items-center justify-center z-10 rounded-xl">
+              <div className="text-center">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-github-blue mx-auto mb-2"></div>
+                <p className="text-gray-300">Loading RUC {managedRuc} data...</p>
+              </div>
+            </div>
+          )}
           <div className="flex border-b border-github-border">
             <button
               onClick={() => setTab('members')}
