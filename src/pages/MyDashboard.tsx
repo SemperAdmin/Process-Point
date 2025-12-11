@@ -1051,7 +1051,14 @@ export default function MyDashboard() {
                 </select>
                 <select value={selectedUnit} onChange={e => setSelectedUnit(e.target.value)} className="px-3 py-2 bg-github-gray bg-opacity-20 border border-github-border rounded text-white">
                   <option value="">Select unit</option>
-                  {unitOptions.map(o => (<option key={o.id} value={o.id}>{o.name}</option>))}
+                  {(() => {
+                    // For Inbound forms, filter units to only those within the same RUC
+                    const userRuc = (user?.unit_id || '').split('-')[1] || ''
+                    const filteredUnits = newKind === 'Inbound' && userRuc
+                      ? unitOptions.filter(o => o.id.split('-')[1] === userRuc)
+                      : unitOptions
+                    return filteredUnits.map(o => (<option key={o.id} value={o.id}>{o.name}</option>))
+                  })()}
                 </select>
                 {newKind === 'Inbound' && (
                   <input type="date" value={arrivalDate} onChange={e => setArrivalDate(e.target.value)} className="px-3 py-2 bg-github-gray bg-opacity-20 border border-github-border rounded text-white" />
