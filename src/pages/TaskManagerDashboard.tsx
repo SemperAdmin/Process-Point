@@ -192,10 +192,9 @@ export default function TaskManagerDashboard() {
           const memberId = (s as any).user_id as string
           const submissionId = (s as any).id as number
           const formName = (s as any).form_name || ''
-          // Extract dates: arrival_date for inbound, departure_date for outbound
-          const formData = (s as any).form_data || {}
-          const arrivalDate = formData.arrival_date || formData.arrivalDate || ''
-          const departureDate = formData.departure_date || formData.departureDate || ''
+          // Extract dates: arrival_date for inbound, departure_date for outbound (stored directly on submission)
+          const arrivalDate = (s as any).arrival_date || ''
+          const departureDate = (s as any).departure_date || ''
           const tasks = ((s as any).tasks || []) as Array<{ sub_task_id: string; status: 'Pending' | 'Cleared' | 'Skipped' }>
           for (const t of tasks) {
             const subId = t.sub_task_id
