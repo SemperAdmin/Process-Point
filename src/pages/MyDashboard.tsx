@@ -191,8 +191,8 @@ export default function MyDashboard() {
     return preview
   }
 
-  const overrideRole = getRoleOverride(user?.user_id || '')?.org_role
-  const isSectionLead = !!(normalizeSectionRole(user?.section_role) === 'Section_Reviewer' || normalizeOrgRole(user?.org_role) === 'Section_Manager' || normalizeOrgRole(overrideRole) === 'Section_Manager')
+  const overrideRole = getRoleOverride(user?.edipi || '')?.org_role
+  const isSectionLead = !!(normalizeSectionRole(user?.section_role) === 'Section_Reviewer' || normalizeOrgRole(overrideRole) === 'Section_Manager' || normalizeOrgRole(user?.org_role) === 'Section_Manager')
 
   useEffect(() => {
     const load = async () => {

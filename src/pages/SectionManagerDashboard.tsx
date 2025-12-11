@@ -239,8 +239,8 @@ export default function SectionManagerDashboard() {
     load()
   }, [user])
 
-  const overrideRole = getRoleOverride(user?.user_id || '')?.org_role
-  const isReviewer = (normalizeSectionRole(user?.section_role) === 'Section_Reviewer' || normalizeOrgRole(user?.org_role) === 'Section_Manager' || normalizeOrgRole(overrideRole) === 'Section_Manager')
+  const overrideRole = getRoleOverride(user?.edipi || '')?.org_role
+  const isReviewer = (normalizeSectionRole(user?.section_role) === 'Section_Reviewer' || normalizeOrgRole(overrideRole) === 'Section_Manager' || normalizeOrgRole(user?.org_role) === 'Section_Manager')
   if (!user || !isReviewer) {
     return (
       <div className="min-h-screen bg-github-dark flex items-center justify-center">
