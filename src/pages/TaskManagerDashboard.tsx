@@ -1043,19 +1043,22 @@ export default function TaskManagerDashboard() {
                         for (const f of affected) {
                           const ids = f.task_ids
                           const total = ids.length
-                          const clearedSet = new Set((progress.progress_tasks || []).filter(t => t.status === 'Cleared').map(t => t.sub_task_id))
-                          const cleared = ids.filter(id => clearedSet.has(id)).length
-                          const status: 'In_Progress' | 'Completed' = total > 0 && cleared === total ? 'Completed' : 'In_Progress'
                           const latest = subs.filter(s => s.form_id === f.id && s.kind === f.kind).sort((a,b)=>new Date(b.created_at).getTime()-new Date(a.created_at).getTime())[0]
                           if (latest) {
+                            // Use form-scoped task status: preserve existing statuses and only update the current task
                             const existingTasks = Array.isArray((latest as any).tasks) ? (((latest as any).tasks || []) as Array<{ sub_task_id: string; description?: string; status?: 'Pending' | 'Cleared' | 'Skipped' }>) : []
                             const byId: Record<string, { sub_task_id: string; description?: string; status?: 'Pending' | 'Cleared' | 'Skipped' }> = {}
                             for (const t of existingTasks) byId[String(t.sub_task_id)] = t
                             const nextTasks = ids.map(tid => ({
                               sub_task_id: tid,
                               description: (byId[tid]?.description || taskLabels[tid]?.description || tid),
-                              status: clearedSet.has(tid) ? 'Cleared' : 'Pending' as const,
+                              // CRITICAL: Keep existing status, only update if this is the task being signed off
+                              status: (tid === actionSubTaskId ? 'Cleared' : (byId[tid]?.status || 'Pending')) as const,
                             }))
+                            // Calculate cleared count from submission's own tasks, not global progress
+                            const submissionClearedSet = new Set(nextTasks.filter(t => t.status === 'Cleared').map(t => t.sub_task_id))
+                            const cleared = ids.filter(id => submissionClearedSet.has(id)).length
+                            const status: 'In_Progress' | 'Completed' = total > 0 && cleared === total ? 'Completed' : 'In_Progress'
                             await sbUpdateSubmission(latest.id, { completed_count: cleared, total_count: total, status, task_ids: ids, tasks: nextTasks as any })
                           }
                         }

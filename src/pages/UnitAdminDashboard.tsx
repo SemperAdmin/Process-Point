@@ -12,7 +12,7 @@ import { fetchJson, LocalUserProfile, UsersIndexEntry } from '@/services/localDa
 import { getRoleOverride, setUserRoleOverride } from '@/utils/localUsersStore'
 import { UNITS } from '@/utils/units'
 import { getAssignedUnitsForRuc, setAssignedUnitsForRuc } from '@/utils/adminScopeStore'
-import { sbListUnitAdmins, sbUpsertUnitAdmin, sbRemoveUnitAdmin } from '@/services/adminService'
+import { sbListUnitAdmins, sbUpsertUnitAdmin, sbRemoveUnitAdmin, sbGetAdminRucs } from '@/services/adminService'
 import { getUnitAdmins, addUnitAdmin, removeUnitAdmin } from '@/utils/unitAdminsStore'
 import { sbListUsersByRuc, sbUpdateUser } from '@/services/supabaseDataService'
 
@@ -24,8 +24,13 @@ export default function UnitAdminDashboard() {
   const [forms, setForms] = useState<UnitForm[]>([])
   const [newSectionName, setNewSectionName] = useState('')
   const [newTask, setNewTask] = useState({ section_id: 0, sub_task_id: '', description: '', responsible_user_ids: '', location: '', instructions: '' })
-  const initialRuc = (user?.unit_id || '').includes('-') ? (user?.unit_id || '').split('-')[1] : (user?.unit_id || '')
-  const [managedRuc, setManagedRuc] = useState(initialRuc)
+  const [adminRucs, setAdminRucs] = useState<Array<{ ruc: string; unit_name: string }>>([])
+  const getInitialRuc = () => {
+    const stored = localStorage.getItem('selectedAdminRuc')
+    if (stored) return stored
+    return (user?.unit_id || '').includes('-') ? (user?.unit_id || '').split('-')[1] : (user?.unit_id || '')
+  }
+  const [managedRuc, setManagedRuc] = useState(getInitialRuc())
   const unitId = managedRuc
   const rucDisplay = managedRuc
   const [companies, setCompanies] = useState<string[]>([])
@@ -140,8 +145,20 @@ export default function UnitAdminDashboard() {
       try {
         const admins = await sbListUnitAdmins()
         setGlobalAdmins(admins)
+        // Fetch RUCs this admin has access to
+        if (user?.edipi) {
+          const rucs = await sbGetAdminRucs(user.edipi)
+          setAdminRucs(rucs)
+          // If no stored RUC preference and user has RUCs, default to first one
+          if (!localStorage.getItem('selectedAdminRuc') && rucs.length > 0 && !managedRuc) {
+            const defaultRuc = rucs[0].ruc
+            setManagedRuc(defaultRuc)
+            localStorage.setItem('selectedAdminRuc', defaultRuc)
+          }
+        }
       } catch {
         setGlobalAdmins([])
+        setAdminRucs([])
       }
       setAdminsLoading(false)
     })()
@@ -243,6 +260,30 @@ export default function UnitAdminDashboard() {
           </div>
         </div>
       </header>
+      {adminRucs.length > 1 && (
+        <div className="bg-github-gray bg-opacity-5 border-b border-github-border">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3">
+            <div className="flex items-center gap-4">
+              <label className="text-sm font-medium text-gray-300">Managing RUC:</label>
+              <select
+                value={managedRuc}
+                onChange={(e) => {
+                  const newRuc = e.target.value
+                  setManagedRuc(newRuc)
+                  localStorage.setItem('selectedAdminRuc', newRuc)
+                }}
+                className="bg-github-gray border border-github-border text-white rounded px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-github-blue"
+              >
+                {adminRucs.map((ruc) => (
+                  <option key={ruc.ruc} value={ruc.ruc}>
+                    RUC {ruc.ruc} - {ruc.unit_name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+        </div>
+      )}
       <main className="px-4 sm:px-6 lg:px-8 py-8 w-full">
         <div className="bg-github-gray bg-opacity-10 border border-github-border rounded-xl">
           <div className="flex border-b border-github-border">
