@@ -535,8 +535,12 @@ export default function MyDashboard() {
                                       const secCode = label?.section_name || ''
                                       const secName = secCode ? (sectionDisplayMap[secCode] || secCode) : ''
                                       const desc = (t.description || label?.description || t.sub_task_id)
-                                      // Note: submission tasks don't store who cleared them - that's in members_progress
-                                      const row = { text: desc, note: undefined, at: undefined, by: undefined }
+                                      // Read log data from submission task fields
+                                      const byUserId = (t as any)?.cleared_by_user_id || ''
+                                      const actor = byUserId ? memberMap[byUserId] : undefined
+                                      const byEdipi = (t as any)?.cleared_by_edipi || ''
+                                      const by = actor ? [actor.rank, [actor.first_name, actor.last_name].filter(Boolean).join(' ')].filter(Boolean).join(' ') : (byEdipi ? `EDIPI ${byEdipi}` : '')
+                                      const row = { text: desc, note: (t as any)?.note, at: (t as any)?.cleared_at_timestamp, by }
                                       if (!completedBySection[secName]) completedBySection[secName] = []
                                       completedBySection[secName].push(row)
                                     }
@@ -819,7 +823,12 @@ export default function MyDashboard() {
                                       const secCode = label?.section_name || ''
                                       const secName = secCode ? (sectionDisplayMap[secCode] || secCode) : ''
                                       const desc = (t.description || label?.description || t.sub_task_id)
-                                      const row = { text: desc, note: undefined, at: undefined, by: undefined }
+                                      // Read log data from submission task fields
+                                      const byUserId = (t as any)?.cleared_by_user_id || ''
+                                      const actor = byUserId ? memberMap[byUserId] : undefined
+                                      const byEdipi = (t as any)?.cleared_by_edipi || ''
+                                      const by = actor ? [actor.rank, [actor.first_name, actor.last_name].filter(Boolean).join(' ')].filter(Boolean).join(' ') : (byEdipi ? `EDIPI ${byEdipi}` : '')
+                                      const row = { text: desc, note: (t as any)?.note, at: (t as any)?.cleared_at_timestamp, by }
                                       if (!completedBySection[secName]) completedBySection[secName] = []
                                       completedBySection[secName].push(row)
                                     }
