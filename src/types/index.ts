@@ -5,6 +5,8 @@ export interface User {
   first_name?: string
   middle_initial?: string
   last_name?: string
+  email?: string
+  phone_number?: string
   branch?: string
   rank?: string
   org_role: 'Unit_Admin' | 'Section_Manager' | 'Member' | 'App_Admin'

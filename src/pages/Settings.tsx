@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ArrowLeft, User, Bell, Palette, Shield } from 'lucide-react'
+import { ArrowLeft, User, Bell, Palette, Shield, Mail } from 'lucide-react'
 import HeaderTools from '@/components/HeaderTools'
 import BrandMark from '@/components/BrandMark'
 import { listCompanies, listSections } from '@/utils/unitStructure'
@@ -18,6 +18,8 @@ export default function Settings() {
   const [firstName, setFirstName] = useState(user?.first_name || '')
   const [middleInitial, setMiddleInitial] = useState(user?.middle_initial || '')
   const [lastName, setLastName] = useState(user?.last_name || '')
+  const [email, setEmail] = useState(user?.email || '')
+  const [phoneNumber, setPhoneNumber] = useState(user?.phone_number || '')
   const [branch, setBranch] = useState(user?.branch || '')
   const [rank, setRank] = useState(user?.rank || '')
   const [mos, setMos] = useState(user?.mos || '')
@@ -70,7 +72,7 @@ export default function Settings() {
   const [notifications, setNotifications] = useState(true)
   const [autoSave, setAutoSave] = useState(true)
   const [fontSize, setFontSize] = useState('14')
-  const [activeTab, setActiveTab] = useState<'profile' | 'appearance' | 'notifications' | 'editor' | 'password'>('profile')
+  const [activeTab, setActiveTab] = useState<'profile' | 'appearance' | 'notifications' | 'editor' | 'password' | 'contact'>('profile')
   
 
   
@@ -118,6 +120,7 @@ export default function Settings() {
             <button onClick={() => setActiveTab('profile')} className={`px-4 py-3 text-sm ${activeTab==='profile'?'text-white border-b-2 border-github-blue':'text-gray-400'}`}>Profile</button>
             <button onClick={() => setActiveTab('notifications')} className={`px-4 py-3 text-sm ${activeTab==='notifications'?'text-white border-b-2 border-github-blue':'text-gray-400'}`}>Notifications</button>
             <button onClick={() => setActiveTab('editor')} className={`px-4 py-3 text-sm ${activeTab==='editor'?'text-white border-b-2 border-github-blue':'text-gray-400'}`}>Editor</button>
+            <button onClick={() => setActiveTab('contact')} className={`px-4 py-3 text-sm ${activeTab==='contact'?'text-white border-b-2 border-github-blue':'text-gray-400'}`}>Contact Info</button>
             <button onClick={() => setActiveTab('password')} className={`px-4 py-3 text-sm ${activeTab==='password'?'text-white border-b-2 border-github-blue':'text-gray-400'}`}>Password</button>
           </div>
           <div className="p-6 space-y-8">
@@ -238,6 +241,50 @@ export default function Settings() {
                       className="px-4 py-2 bg-github-blue hover:bg-blue-600 text-white rounded-lg"
                     >
                       Save Profile
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+            {activeTab === 'contact' && (
+              <div>
+                <div className="flex items-center mb-6">
+                  <Mail className="w-6 h-6 text-github-blue mr-3" />
+                  <h2 className="text-xl font-semibold text-white">Contact Info</h2>
+                </div>
+                <div className="space-y-6">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-300 mb-1">Email</label>
+                      <input value={email} onChange={e => setEmail(e.target.value)} className="w-full px-3 py-2 bg-github-gray bg-opacity-20 border border-github-border rounded-lg text-white" />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-300 mb-1">Phone Number</label>
+                      <input value={phoneNumber} onChange={e => setPhoneNumber(e.target.value)} className="w-full px-3 py-2 bg-github-gray bg-opacity-20 border border-github-border rounded-lg text-white" />
+                    </div>
+                  </div>
+                  <div>
+                    <button
+                      onClick={async () => {
+                        if (!user) return
+                        const patch = {
+                          email: email || undefined,
+                          phone_number: phoneNumber || undefined,
+                        }
+                        try {
+                          if (import.meta.env.VITE_USE_SUPABASE === '1') {
+                            await sbUpdateUser(user.user_id, patch as any)
+                          }
+                          const updated = { ...user, ...patch, updated_at_timestamp: new Date().toISOString() }
+                          login(updated as any)
+                          alert('Contact info updated')
+                        } catch (e: any) {
+                          alert(e?.message || 'Failed to update contact info')
+                        }
+                      }}
+                      className="px-4 py-2 bg-github-blue hover:bg-blue-600 text-white rounded-lg"
+                    >
+                      Save Contact Info
                     </button>
                   </div>
                 </div>

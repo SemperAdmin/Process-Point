@@ -464,11 +464,10 @@ export default function MyDashboard() {
                 <div>
                   {(myInbound.length || mySubmissions.filter(s => s.kind === 'Inbound').length) ? (
                     <div className="mt-4">
-                      <div className="grid grid-cols-6 text-gray-400 text-sm mb-2">
+                      <div className="grid grid-cols-5 text-gray-400 text-sm mb-2">
                         <div className="text-left p-2">Form</div>
                         <div className="text-left p-2">Unit</div>
-                        <div className="text-left p-2">EDIPI</div>
-                        <div className="text-left p-2">Created</div>
+                        <div className="text-left p-2">Arrival</div>
                         <div className="text-left p-2">Done/Total</div>
                         <div className="text-left p-2">Action</div>
                       </div>
@@ -485,11 +484,16 @@ export default function MyDashboard() {
                           const done = ids.filter((id: string) => cleared.has(id)).length
                           return total > 0 && done < total
                         }).map(ri => (
-                          <div key={ri.key} className="grid grid-cols-6 items-center border-t border-github-border text-gray-300">
+                          <div key={ri.key} className="grid grid-cols-5 items-center border-t border-github-border text-gray-300">
                             <div className="p-2">{ri.name}</div>
                             <div className="p-2">{ri.unit}</div>
-                            <div className="p-2">{user?.edipi || ''}</div>
-                            <div className="p-2">{new Date(ri.created).toLocaleDateString()}</div>
+                            <div className="p-2">{(() => {
+                              const fid = ri.formId
+                              const subs = mySubmissions.filter(s => s.form_id === fid && s.kind === ri.kind)
+                              const latest = subs.sort((a,b)=>new Date(b.created_at).getTime()-new Date(a.created_at).getTime())[0]
+                              const arr = (latest as any)?.arrival_date || arrivalDate
+                              return arr ? arr : new Date().toLocaleDateString()
+                            })()}</div>
                             <div className="p-2">{(() => {
                               const fid = ri.formId
                               const subs = mySubmissions.filter(s => s.form_id === fid && s.kind === ri.kind)
@@ -673,11 +677,10 @@ export default function MyDashboard() {
                 {inboundView === 'Completed' && (
                 <div className="mt-6">
                   <div className="mt-4">
-                      <div className="grid grid-cols-6 text-gray-400 text-sm mb-2">
+                      <div className="grid grid-cols-5 text-gray-400 text-sm mb-2">
                         <div className="text-left p-2">Form</div>
                         <div className="text-left p-2">Unit</div>
-                        <div className="text-left p-2">EDIPI</div>
-                        <div className="text-left p-2">Created</div>
+                        <div className="text-left p-2">Arrival</div>
                         <div className="text-left p-2">Done/Total</div>
                         <div className="text-left p-2">Action</div>
                       </div>
@@ -697,11 +700,16 @@ export default function MyDashboard() {
                         })
                         if (!inboundCompleted.length) return (<div className="text-gray-400 text-sm">None</div>)
                         return inboundCompleted.map(i => (
-                          <div key={`in-copy-${i.id}`} className="grid grid-cols-6 items-center border-t border-github-border text-gray-300">
+                          <div key={`in-copy-${i.id}`} className="grid grid-cols-5 items-center border-t border-github-border text-gray-300">
                             <div className="p-2">{i.name}</div>
                             <div className="p-2">{user?.unit_id || ''}</div>
-                            <div className="p-2">{user?.edipi || ''}</div>
-                            <div className="p-2">{new Date(i.created_at).toLocaleDateString()}</div>
+                            <div className="p-2">{(() => {
+                              const fid = i.form_id ?? (forms.find(f => f.name === i.name && f.kind === 'Inbound')?.id || 0)
+                              const subs = mySubmissions.filter(s => s.form_id === fid && s.kind === 'Inbound')
+                              const latest = subs.sort((a,b)=>new Date(b.created_at).getTime()-new Date(a.created_at).getTime())[0]
+                              const arr = (latest as any)?.arrival_date || arrivalDate
+                              return arr ? arr : new Date().toLocaleDateString()
+                            })()}</div>
                             <div className="p-2">{(() => {
                               const fid = i.form_id ?? (forms.find(f => f.name === i.name && f.kind === 'Inbound')?.id || 0)
                               const subs = mySubmissions.filter(s => s.form_id === fid && s.kind === 'Inbound')
@@ -716,7 +724,7 @@ export default function MyDashboard() {
                             <div className="p-2">
                               <button
                                 className="px-2 py-1 bg-github-blue hover:bg-blue-600 text-white rounded text-xs"
-                              onClick={async () => {
+                                onClick={async () => {
                                 if (!user) return
                                 const form = i.form_id ? forms.find(f => f.id === i.form_id) : forms.find(f => f.name === i.name && f.kind === 'Inbound')
                                 if (!form) return
