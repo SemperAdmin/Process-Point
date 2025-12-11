@@ -954,11 +954,12 @@ export default function TaskManagerDashboard() {
                   const note = [label, actionCompletionValue].filter(Boolean).join(': ') || 'Cleared'
                   const idx = progress.progress_tasks.findIndex(t => t.sub_task_id === actionSubTaskId)
                   if (idx === -1) {
-                    const entry: any = { sub_task_id: actionSubTaskId, status: 'Cleared', cleared_by_user_id: user.user_id, cleared_at_timestamp: now, logs: [{ at: now, note }] }
+                    const entry: any = { sub_task_id: actionSubTaskId, status: 'Cleared', cleared_by_user_id: user.user_id, cleared_by_edipi: user.edipi, cleared_at_timestamp: now, logs: [{ at: now, note }] }
                     progress.progress_tasks.push(entry as any)
                   } else {
                     progress.progress_tasks[idx].status = 'Cleared'
                     ;(progress.progress_tasks[idx] as any).cleared_by_user_id = user.user_id
+                    ;(progress.progress_tasks[idx] as any).cleared_by_edipi = user.edipi
                     ;(progress.progress_tasks[idx] as any).cleared_at_timestamp = now
                     const logsArr = Array.isArray((progress.progress_tasks[idx] as any).logs) ? (progress.progress_tasks[idx] as any).logs : []
                     logsArr.push({ at: now, note })
@@ -984,7 +985,15 @@ export default function TaskManagerDashboard() {
                           const status: 'In_Progress' | 'Completed' = total > 0 && cleared === total ? 'Completed' : 'In_Progress'
                           const latest = subs.filter(s => s.form_id === f.id && s.kind === f.kind).sort((a,b)=>new Date(b.created_at).getTime()-new Date(a.created_at).getTime())[0]
                           if (latest) {
-                            await sbUpdateSubmission(latest.id, { completed_count: cleared, total_count: total, status, task_ids: ids })
+                            const existingTasks = Array.isArray((latest as any).tasks) ? (((latest as any).tasks || []) as Array<{ sub_task_id: string; description?: string; status?: 'Pending' | 'Cleared' | 'Skipped' }>) : []
+                            const byId: Record<string, { sub_task_id: string; description?: string; status?: 'Pending' | 'Cleared' | 'Skipped' }> = {}
+                            for (const t of existingTasks) byId[String(t.sub_task_id)] = t
+                            const nextTasks = ids.map(tid => ({
+                              sub_task_id: tid,
+                              description: (byId[tid]?.description || taskLabels[tid]?.description || tid),
+                              status: clearedSet.has(tid) ? 'Cleared' : 'Pending' as const,
+                            }))
+                            await sbUpdateSubmission(latest.id, { completed_count: cleared, total_count: total, status, task_ids: ids, tasks: nextTasks as any })
                           }
                         }
                       }

@@ -12,7 +12,6 @@ import { getRoleOverride } from '@/utils/localUsersStore'
 import { googleMapsLink } from '@/utils/maps'
 import { normalizeOrgRole, normalizeSectionRole } from '@/utils/roles'
 import { sbListUsers, sbListMemberFormCompletion } from '@/services/supabaseDataService'
-import { listMyItems, createMyItem, MyItem } from '@/utils/myItemsStore'
 import { createSubmission, listSubmissions, MyFormSubmission } from '@/utils/myFormSubmissionsStore'
 import { sbUpsertProgress } from '@/services/supabaseDataService'
 import { supabase } from '@/services/supabaseClient'
@@ -25,8 +24,7 @@ export default function MyDashboard() {
   const { user, isAuthenticated } = useAuthStore()
   const [memberTasks, setMemberTasks] = useState<{ sub_task_id: string; status: string }[]>([])
   const [pendingSection, setPendingSection] = useState<{ member_user_id: string; sub_task_id: string }[]>([])
-  const [myInbound, setMyInbound] = useState<MyItem[]>([])
-  const [myOutbound, setMyOutbound] = useState<MyItem[]>([])
+  const [mySubmissions, setMySubmissions] = useState<MyFormSubmission[]>([])
   const [loading, setLoading] = useState(true)
   const [activeTab, setActiveTab] = useState<'inbound' | 'outbound'>('inbound')
   const [inboundView, setInboundView] = useState<'Pending' | 'Completed'>('Pending')
@@ -39,8 +37,8 @@ export default function MyDashboard() {
   const [submissionPreview, setSubmissionPreview] = useState<MyFormSubmission | null>(null)
   const [sectionDisplay, setSectionDisplay] = useState('')
   const [previewPendingBySection, setPreviewPendingBySection] = useState<Record<string, { description: string; location?: string; map_url?: string; instructions?: string }[]>>({})
-  const [previewCompletedBySection, setPreviewCompletedBySection] = useState<Record<string, { text: string; note?: string; at?: string }[]>>({})
-  const [previewCompletedRows, setPreviewCompletedRows] = useState<Array<{ section: string; task: string; note?: string; at?: string }>>([])
+  const [previewCompletedBySection, setPreviewCompletedBySection] = useState<Record<string, { text: string; note?: string; at?: string; by?: string }[]>>({})
+  const [previewCompletedRows, setPreviewCompletedRows] = useState<Array<{ section: string; task: string; note?: string; at?: string; by?: string }>>([])
   const [sectionDisplayMap, setSectionDisplayMap] = useState<Record<string, string>>({})
   const [memberMap, setMemberMap] = useState<Record<string, LocalUserProfile>>({})
   const [archivedCleared, setArchivedCleared] = useState<{ member_user_id: string; sub_task_id: string; cleared_at_timestamp?: string }[]>([])
@@ -54,7 +52,6 @@ export default function MyDashboard() {
   const [selectedUnit, setSelectedUnit] = useState<string>('')
   const [unitOptions, setUnitOptions] = useState<Array<{ id: string; name: string }>>([])
   const [formCompletion, setFormCompletion] = useState<Record<number, { completed: number; total: number }>>({})
-  const [mySubmissions, setMySubmissions] = useState<MyFormSubmission[]>([])
   const inboundFormsPendingSummary = useMemo(() => {
     const clearedSet = new Set(memberTasks.filter(t => t.status === 'Cleared').map(t => t.sub_task_id))
     const pendingSet = new Set(memberTasks.filter(t => t.status === 'Pending').map(t => t.sub_task_id))
@@ -105,57 +102,52 @@ export default function MyDashboard() {
     const comp: Record<number, { completed: number; total: number }> = {}
     const clearedSet = new Set(memberTasks.filter(t => t.status === 'Cleared').map(t => t.sub_task_id))
     for (const f of forms) {
-      const total = f.task_ids.length
-      const done = f.task_ids.filter(tid => clearedSet.has(tid)).length
-      comp[f.id] = { completed: done, total }
+      const latest = mySubmissions
+        .filter(s => s.form_id === f.id && s.kind === f.kind)
+        .sort((a,b)=>new Date(b.created_at).getTime()-new Date(a.created_at).getTime())[0]
+      const fallbackTotal = f.task_ids.length
+      const fallbackDone = f.task_ids.filter(tid => clearedSet.has(tid)).length
+      const total = typeof (latest as any)?.total_count === 'number' ? Number((latest as any).total_count) : fallbackTotal
+      const completed = typeof (latest as any)?.completed_count === 'number' ? Number((latest as any).completed_count) : fallbackDone
+      comp[f.id] = { completed, total }
     }
     setFormCompletion(comp)
-  }, [forms, memberTasks])
+  }, [forms, mySubmissions, memberTasks])
 
   const pendingListRows = useMemo(() => {
     if (!user) return [] as Array<{ key: string; name: string; unit: string; created: string; formId: number; kind: 'Inbound' }>
-    const inboundPending = myInbound.filter(i => {
-      const fid = i.form_id ?? (forms.find(f => f.name === i.name && f.kind === 'Inbound')?.id || 0)
-      const rc = formCompletion[fid]
-      return rc ? (rc.completed < rc.total) : true
-    })
-    const subsFallback = (!inboundPending.length ? mySubmissions.filter(s => s.kind === 'Inbound').filter(s => {
-      const ids = Array.isArray(s.task_ids) ? (s.task_ids || []) : (s.tasks || []).map(t => t.sub_task_id)
-      const total = ids.length
-      const cleared = new Set(memberTasks.filter(t => t.status === 'Cleared').map(t => t.sub_task_id))
-      const done = ids.filter((id: string) => cleared.has(id)).length
-      return total > 0 && done < total
-    }) : [])
-    const rows = inboundPending.map(i => ({ key: `in-${i.id}`, name: i.name, unit: user?.unit_id || '', created: i.created_at, formId: i.form_id ?? (forms.find(f => f.name === i.name && f.kind === 'Inbound')?.id || 0), kind: 'Inbound' as const }))
-      .concat((subsFallback || []).map(s => ({ key: `sub-${s.id}`, name: s.form_name, unit: s.unit_id, created: s.created_at, formId: s.form_id || (forms.find(f => f.name === s.form_name && f.kind === 'Inbound')?.id || 0), kind: 'Inbound' as const })))
+    const rows = mySubmissions
+      .filter(s => s.kind === 'Inbound')
+      .filter(s => {
+        const ids = Array.isArray(s.task_ids) ? (s.task_ids || []) : (s.tasks || []).map(t => t.sub_task_id)
+        const total = typeof (s as any)?.total_count === 'number' ? Number((s as any).total_count) : ids.length
+        const done = typeof (s as any)?.completed_count === 'number' ? Number((s as any).completed_count) : 0
+        return total > 0 && done < total
+      })
+      .map(s => ({ key: `sub-${s.id}`, name: s.form_name, unit: s.unit_id, created: s.created_at, formId: s.form_id || (forms.find(f => f.name === s.form_name && f.kind === 'Inbound')?.id || 0), kind: 'Inbound' as const }))
     return rows
-  }, [user, myInbound, mySubmissions, forms, formCompletion, memberTasks])
+  }, [user, mySubmissions, forms])
 
   const outboundPendingListRows = useMemo(() => {
     if (!user) return [] as Array<{ key: string; name: string; unit: string; created: string; formId: number; kind: 'Outbound' }>
-    const outboundPending = myOutbound.filter(i => {
-      const fid = i.form_id ?? (forms.find(f => f.name === i.name && f.kind === 'Outbound')?.id || 0)
-      const rc = formCompletion[fid]
-      return rc ? (rc.completed < rc.total) : true
-    })
-    const subsFallback = (!outboundPending.length ? mySubmissions.filter(s => s.kind === 'Outbound').filter(s => {
-      const ids = Array.isArray(s.task_ids) ? (s.task_ids || []) : (s.tasks || []).map(t => t.sub_task_id)
-      const total = ids.length
-      const cleared = new Set(memberTasks.filter(t => t.status === 'Cleared').map(t => t.sub_task_id))
-      const done = ids.filter((id: string) => cleared.has(id)).length
-      return total > 0 && done < total
-    }) : [])
-    const rows = outboundPending.map(i => ({ key: `out-${i.id}`, name: i.name, unit: user?.unit_id || '', created: i.created_at, formId: i.form_id ?? (forms.find(f => f.name === i.name && f.kind === 'Outbound')?.id || 0), kind: 'Outbound' as const }))
-      .concat((subsFallback || []).map(s => ({ key: `sub-${s.id}`, name: s.form_name, unit: s.unit_id, created: s.created_at, formId: s.form_id || (forms.find(f => f.name === s.form_name && f.kind === 'Outbound')?.id || 0), kind: 'Outbound' as const })))
+    const rows = mySubmissions
+      .filter(s => s.kind === 'Outbound')
+      .filter(s => {
+        const ids = Array.isArray(s.task_ids) ? (s.task_ids || []) : (s.tasks || []).map(t => t.sub_task_id)
+        const total = typeof (s as any)?.total_count === 'number' ? Number((s as any).total_count) : ids.length
+        const done = typeof (s as any)?.completed_count === 'number' ? Number((s as any).completed_count) : 0
+        return total > 0 && done < total
+      })
+      .map(s => ({ key: `sub-${s.id}`, name: s.form_name, unit: s.unit_id, created: s.created_at, formId: s.form_id || (forms.find(f => f.name === s.form_name && f.kind === 'Outbound')?.id || 0), kind: 'Outbound' as const }))
     return rows
-  }, [user, myOutbound, mySubmissions, forms, formCompletion, memberTasks])
+  }, [user, mySubmissions, forms])
 
   const createPreview = (form: UnitForm, kind: 'Inbound' | 'Outbound', tasks: { sub_task_id: string; description: string; status: 'Pending' }[], existing?: MyFormSubmission): MyFormSubmission => {
     const latest = existing || mySubmissions
       .filter(s => s.form_id === form.id && s.kind === kind)
       .sort((a,b)=>new Date(b.created_at).getTime()-new Date(a.created_at).getTime())[0]
     const preview: MyFormSubmission = {
-      id: (latest as any)?.id || Date.now(),
+      id: (latest as any)?.id || 0,
       user_id: user!.user_id,
       unit_id: selectedUnit || user!.unit_id,
       form_id: form.id,
@@ -221,10 +213,7 @@ export default function MyDashboard() {
         const a = await listArchivedForUser(user.user_id, user.unit_id)
         setArchivedCleared(a)
       } catch (err) { console.error(err) }
-      const inboundItems = await listMyItems(user.user_id, 'Inbound')
-      const outboundItems = await listMyItems(user.user_id, 'Outbound')
-      setMyInbound(inboundItems)
-      setMyOutbound(outboundItems)
+      
       try {
         const subs = await listSubmissions(user.user_id)
         setMySubmissions(subs)
@@ -474,9 +463,8 @@ export default function MyDashboard() {
                         const inboundSubs = mySubmissions.filter(s => s.kind === 'Inbound')
                         const rows = inboundSubs.filter(s => {
                           const ids = Array.isArray((s as any)?.task_ids) ? ((s as any).task_ids || []) : (((s as any)?.tasks || []).map((t: any) => t.sub_task_id))
-                          const total = ids.length
-                          const cleared = new Set(memberTasks.filter(t => t.status === 'Cleared').map(t => t.sub_task_id))
-                          const done = ids.filter((id: string) => cleared.has(id)).length
+                          const total = typeof (s as any)?.total_count === 'number' ? Number((s as any).total_count) : ids.length
+                          const done = typeof (s as any)?.completed_count === 'number' ? Number((s as any).completed_count) : 0
                           return total > 0 && done < total
                         })
                         return rows.length ? rows.map(s => (
@@ -486,9 +474,8 @@ export default function MyDashboard() {
                             <div className="p-2">{s.arrival_date || (arrivalDate || new Date().toISOString().slice(0,10))}</div>
                             <div className="p-2">{(() => {
                               const ids = Array.isArray((s as any)?.task_ids) ? ((s as any).task_ids || []) : (((s as any)?.tasks || []).map((t: any) => t.sub_task_id))
-                              const total = ids.length
-                              const cleared = new Set(memberTasks.filter(t => t.status === 'Cleared').map(t => t.sub_task_id))
-                              const done = ids.filter((id: string) => cleared.has(id)).length
+                              const total = typeof (s as any)?.total_count === 'number' ? Number((s as any).total_count) : ids.length
+                              const done = typeof (s as any)?.completed_count === 'number' ? Number((s as any).completed_count) : 0
                               return `${done}/${total}`
                             })()}</div>
                             <div className="p-2">
@@ -514,7 +501,7 @@ export default function MyDashboard() {
                                           status: 'Pending' as const,
                                         }))
                                       const completedSet = new Set(progress.progress_tasks.filter(t => t.status === 'Cleared').map(t => t.sub_task_id))
-                                      const completedBySection: Record<string, { text: string; note?: string; at?: string }[]> = {}
+                                      const completedBySection: Record<string, { text: string; note?: string; at?: string; by?: string }[]> = {}
                                       for (const tid of taskIds) {
                                         if (!completedSet.has(tid)) continue
                                         const label = taskLabels[tid]
@@ -523,14 +510,18 @@ export default function MyDashboard() {
                                         const desc = (label?.description || tid)
                                         const entry = progress.progress_tasks.find(t => String(t.sub_task_id) === String(tid)) as any
                                         const lastLog = Array.isArray(entry?.logs) && entry.logs.length ? entry.logs[entry.logs.length - 1] : undefined
-                                        const row = { text: desc, note: lastLog?.note, at: lastLog?.at }
+                                        const byUserId = (entry as any)?.cleared_by_user_id || ''
+                                        const actor = byUserId ? memberMap[byUserId] : undefined
+                                        const byEdipi = (entry as any)?.cleared_by_edipi || ''
+                                        const by = actor ? [actor.rank, [actor.first_name, actor.last_name].filter(Boolean).join(' ')].filter(Boolean).join(' ') : (byEdipi ? `EDIPI ${byEdipi}` : '')
+                                        const row = { text: desc, note: lastLog?.note, at: lastLog?.at, by }
                                         if (!completedBySection[secName]) completedBySection[secName] = []
                                         completedBySection[secName].push(row)
                                       }
                                       setPreviewCompletedBySection(completedBySection)
-                                      const consolidated: Array<{ section: string; task: string; note?: string; at?: string }> = []
+                                      const consolidated: Array<{ section: string; task: string; note?: string; at?: string; by?: string }> = []
                                       for (const [sec, rows2] of Object.entries(completedBySection)) {
-                                        for (const r of rows2) consolidated.push({ section: sec, task: r.text, note: r.note, at: r.at })
+                                        for (const r of rows2) consolidated.push({ section: sec, task: r.text, note: r.note, at: r.at, by: r.by })
                                       }
                                       setPreviewCompletedRows(consolidated)
                                     } catch (err) { console.error(err) }
@@ -599,7 +590,7 @@ export default function MyDashboard() {
                                           status: 'Pending' as const,
                                         }))
                                       const completedSet = new Set(progress.progress_tasks.filter(t => t.status === 'Cleared').map(t => t.sub_task_id))
-                                      const completedBySection: Record<string, { text: string; note?: string; at?: string }[]> = {}
+                                      const completedBySection: Record<string, { text: string; note?: string; at?: string; by?: string }[]> = {}
                                       for (const tid of form.task_ids) {
                                         if (!completedSet.has(tid)) continue
                                         const label = taskLabels[tid]
@@ -613,9 +604,9 @@ export default function MyDashboard() {
                                         completedBySection[secName].push(row)
                                       }
                                       setPreviewCompletedBySection(completedBySection)
-                                      const consolidated: Array<{ section: string; task: string; note?: string; at?: string }> = []
+                                      const consolidated: Array<{ section: string; task: string; note?: string; at?: string; by?: string }> = []
                                       for (const [sec, rows] of Object.entries(completedBySection)) {
-                                        for (const ro of rows) consolidated.push({ section: sec, task: ro.text, note: ro.note, at: ro.at })
+                                        for (const ro of rows) consolidated.push({ section: sec, task: ro.text, note: ro.note, at: ro.at, by: ro.by })
                                       }
                                       setPreviewCompletedRows(consolidated)
                                     } catch (err) { console.error(err) }
@@ -640,7 +631,7 @@ export default function MyDashboard() {
                         </div>
                       </div>
                     ) : (
-                      <p className="text-gray-400 text-sm">No inbound items</p>
+                      <p className="text-gray-400 text-sm">No inbound forms</p>
                     )
                   )}
                 </div>)}
@@ -657,39 +648,22 @@ export default function MyDashboard() {
                       </div>
                     <div className="text-sm">
                       {(() => {
-                        const clearedSet = new Set(memberTasks.filter(t => t.status === 'Cleared').map(t => t.sub_task_id))
-                        const inboundCompleted = myInbound.filter(i => {
-                          const fid = i.form_id ?? (forms.find(f => f.name === i.name && f.kind === 'Inbound')?.id || 0)
-                          const subs = mySubmissions.filter(s => s.form_id === fid && s.kind === 'Inbound')
-                          const latest = subs.sort((a,b)=>new Date(b.created_at).getTime()-new Date(a.created_at).getTime())[0]
-                          const ids = Array.isArray((latest as any)?.task_ids)
-                            ? (latest as any).task_ids
-                            : (latest?.tasks?.map(t => t.sub_task_id) || (forms.find(f => f.id === fid)?.task_ids || []))
-                          const total = ids.length
-                          const done = ids.filter((id: string) => clearedSet.has(id)).length
+                        const inboundCompleted = mySubmissions.filter(s => s.kind === 'Inbound').filter(s => {
+                          const ids = Array.isArray((s as any)?.task_ids) ? (((s as any).task_ids || []) as string[]) : (((s as any)?.tasks || []).map((t: any) => t.sub_task_id))
+                          const total = typeof (s as any)?.total_count === 'number' ? Number((s as any).total_count) : ids.length
+                          const done = typeof (s as any)?.completed_count === 'number' ? Number((s as any).completed_count) : 0
                           return total > 0 && done === total
                         })
                         if (!inboundCompleted.length) return (<div className="text-gray-400 text-sm">None</div>)
                         return inboundCompleted.map(i => (
                           <div key={`in-copy-${i.id}`} className="grid grid-cols-5 items-center border-t border-github-border text-gray-300">
-                            <div className="p-2">{i.name}</div>
+                            <div className="p-2">{i.form_name}</div>
                             <div className="p-2">{user?.unit_id || ''}</div>
+                            <div className="p-2">{(i as any)?.arrival_date || (arrivalDate || new Date().toISOString().slice(0,10))}</div>
                             <div className="p-2">{(() => {
-                              const fid = i.form_id ?? (forms.find(f => f.name === i.name && f.kind === 'Inbound')?.id || 0)
-                              const subs = mySubmissions.filter(s => s.form_id === fid && s.kind === 'Inbound')
-                              const latest = subs.sort((a,b)=>new Date(b.created_at).getTime()-new Date(a.created_at).getTime())[0]
-                              const arr = (latest as any)?.arrival_date || arrivalDate
-                              return arr ? arr : new Date().toLocaleDateString()
-                            })()}</div>
-                            <div className="p-2">{(() => {
-                              const fid = i.form_id ?? (forms.find(f => f.name === i.name && f.kind === 'Inbound')?.id || 0)
-                              const subs = mySubmissions.filter(s => s.form_id === fid && s.kind === 'Inbound')
-                              const latest = subs.sort((a,b)=>new Date(b.created_at).getTime()-new Date(a.created_at).getTime())[0]
-                              const ids = Array.isArray(latest?.task_ids)
-                                ? latest!.task_ids!
-                                : (latest?.tasks?.map(t => t.sub_task_id) || (forms.find(f => f.id === fid)?.task_ids || []))
-                              const total = ids.length
-                              const done = ids.filter((id: string) => clearedSet.has(id)).length
+                              const ids = Array.isArray((i as any)?.task_ids) ? (((i as any).task_ids || []) as string[]) : (((i as any)?.tasks || []).map((t: any) => t.sub_task_id))
+                              const total = typeof (i as any)?.total_count === 'number' ? Number((i as any).total_count) : ids.length
+                              const done = typeof (i as any)?.completed_count === 'number' ? Number((i as any).completed_count) : 0
                               return `${done}/${total}`
                             })()}</div>
                             <div className="p-2">
@@ -697,7 +671,7 @@ export default function MyDashboard() {
                                 className="px-2 py-1 bg-github-blue hover:bg-blue-600 text-white rounded text-xs"
                                 onClick={async () => {
                                 if (!user) return
-                                const form = i.form_id ? forms.find(f => f.id === i.form_id) : forms.find(f => f.name === i.name && f.kind === 'Inbound')
+                                const form = i.form_id ? forms.find(f => f.id === i.form_id) : forms.find(f => f.name === i.form_name && f.kind === 'Inbound')
                                 if (!form) return
                                 let tasks: { sub_task_id: string; description: string; status: 'Pending' }[] = []
                                 try {
@@ -711,7 +685,7 @@ export default function MyDashboard() {
                                       status: 'Pending' as const,
                                     }))
                                   const completedSet = new Set(progress.progress_tasks.filter(t => t.status === 'Cleared').map(t => t.sub_task_id))
-                                  const completedBySection: Record<string, { text: string; note?: string; at?: string }[]> = {}
+                                  const completedBySection: Record<string, { text: string; note?: string; at?: string; by?: string }[]> = {}
                                   for (const tid of form.task_ids) {
                                     if (!completedSet.has(tid)) continue
                                     const label = taskLabels[tid]
@@ -720,14 +694,18 @@ export default function MyDashboard() {
                                     const desc = (label?.description || tid)
                                     const entry = (progress.progress_tasks || []).find(t => String(t.sub_task_id) === String(tid)) as any
                                     const lastLog = Array.isArray(entry?.logs) && entry.logs.length ? entry.logs[entry.logs.length - 1] : undefined
-                                    const row = { text: desc, note: lastLog?.note, at: (lastLog?.at || (entry as any)?.cleared_at_timestamp) }
+                                    const byUserId = (entry as any)?.cleared_by_user_id || ''
+                                    const actor = byUserId ? memberMap[byUserId] : undefined
+                                    const byEdipi = (entry as any)?.cleared_by_edipi || ''
+                                    const by = actor ? [actor.rank, [actor.first_name, actor.last_name].filter(Boolean).join(' ')].filter(Boolean).join(' ') : (byEdipi ? `EDIPI ${byEdipi}` : '')
+                                    const row = { text: desc, note: lastLog?.note, at: (lastLog?.at || (entry as any)?.cleared_at_timestamp), by }
                                     if (!completedBySection[secName]) completedBySection[secName] = []
                                     completedBySection[secName].push(row)
                                   }
                                   setPreviewCompletedBySection(completedBySection)
-                                  const consolidated: Array<{ section: string; task: string; note?: string; at?: string }> = []
+                                  const consolidated: Array<{ section: string; task: string; note?: string; at?: string; by?: string }> = []
                                   for (const [sec, rows] of Object.entries(completedBySection)) {
-                                    for (const r of rows) consolidated.push({ section: sec, task: r.text, note: r.note, at: r.at })
+                                    for (const r of rows) consolidated.push({ section: sec, task: r.text, note: r.note, at: r.at, by: r.by })
                                   }
                                   setPreviewCompletedRows(consolidated)
                                 } catch (err) { console.error(err) }
@@ -781,9 +759,8 @@ export default function MyDashboard() {
                           const outboundSubs = mySubmissions.filter(s => s.kind === 'Outbound')
                           const rows = outboundSubs.filter(s => {
                             const ids = Array.isArray((s as any)?.task_ids) ? (((s as any).task_ids || []) as string[]) : ((((s as any)?.tasks || []) as any[]).map((t: any) => t.sub_task_id))
-                            const total = ids.length
-                            const cleared = new Set(memberTasks.filter(t => t.status === 'Cleared').map(t => t.sub_task_id))
-                            const done = ids.filter((id: string) => cleared.has(id)).length
+                            const total = typeof (s as any)?.total_count === 'number' ? Number((s as any).total_count) : ids.length
+                            const done = typeof (s as any)?.completed_count === 'number' ? Number((s as any).completed_count) : 0
                             return total > 0 && done < total
                           })
                           return rows.length ? rows.map(s => (
@@ -793,9 +770,8 @@ export default function MyDashboard() {
                               <div className="p-2">{s.departure_date || (departureDate || new Date().toISOString().slice(0,10))}</div>
                               <div className="p-2">{(() => {
                                 const ids = Array.isArray((s as any)?.task_ids) ? (((s as any).task_ids || []) as string[]) : ((((s as any)?.tasks || []) as any[]).map((t: any) => t.sub_task_id))
-                                const total = ids.length
-                                const cleared = new Set(memberTasks.filter(t => t.status === 'Cleared').map(t => t.sub_task_id))
-                                const done = ids.filter((id: string) => cleared.has(id)).length
+                                const total = typeof (s as any)?.total_count === 'number' ? Number((s as any).total_count) : ids.length
+                                const done = typeof (s as any)?.completed_count === 'number' ? Number((s as any).completed_count) : 0
                                 return `${done}/${total}`
                               })()}</div>
                               <div className="p-2">
@@ -821,7 +797,7 @@ export default function MyDashboard() {
                                           status: 'Pending' as const,
                                         }))
                                       const completedSet = new Set(progress.progress_tasks.filter(t => t.status === 'Cleared').map(t => t.sub_task_id))
-                                      const completedBySection: Record<string, { text: string; note?: string; at?: string }[]> = {}
+                                      const completedBySection: Record<string, { text: string; note?: string; at?: string; by?: string }[]> = {}
                                       for (const tid of taskIds) {
                                         if (!completedSet.has(tid)) continue
                                         const label = taskLabels[tid]
@@ -830,14 +806,18 @@ export default function MyDashboard() {
                                         const desc = (label?.description || tid)
                                         const entry = progress.progress_tasks.find(t => String(t.sub_task_id) === String(tid)) as any
                                         const lastLog = Array.isArray(entry?.logs) && entry.logs.length ? entry.logs[entry.logs.length - 1] : undefined
-                                        const row = { text: desc, note: lastLog?.note, at: lastLog?.at }
+                                        const byUserId = (entry as any)?.cleared_by_user_id || ''
+                                        const actor = byUserId ? memberMap[byUserId] : undefined
+                                        const byEdipi = (entry as any)?.cleared_by_edipi || ''
+                                        const by = actor ? [actor.rank, [actor.first_name, actor.last_name].filter(Boolean).join(' ')].filter(Boolean).join(' ') : (byEdipi ? `EDIPI ${byEdipi}` : '')
+                                        const row = { text: desc, note: lastLog?.note, at: lastLog?.at, by }
                                         if (!completedBySection[secName]) completedBySection[secName] = []
                                         completedBySection[secName].push(row)
                                       }
                                       setPreviewCompletedBySection(completedBySection)
-                                      const consolidated: Array<{ section: string; task: string; note?: string; at?: string }> = []
+                                      const consolidated: Array<{ section: string; task: string; note?: string; at?: string; by?: string }> = []
                                       for (const [sec, rows2] of Object.entries(completedBySection)) {
-                                        for (const r of rows2) consolidated.push({ section: sec, task: r.text, note: r.note, at: r.at })
+                                        for (const r of rows2) consolidated.push({ section: sec, task: r.text, note: r.note, at: r.at, by: r.by })
                                       }
                                       setPreviewCompletedRows(consolidated)
                                     } catch (err) { console.error(err) }
@@ -927,13 +907,13 @@ export default function MyDashboard() {
                         </div>
                       </div>
                     ) : (
-                      <p className="text-gray-400 text-sm">No outbound items</p>
+                      <p className="text-gray-400 text-sm">No outbound forms</p>
                     )
                   )}
                 </div>)}
                 {outboundView === 'Completed' && (
                 <div>
-                  {myOutbound.length ? (
+                  {mySubmissions.filter(s => s.kind === 'Outbound').length ? (
                     <div className="mt-4">
                       <div className="grid grid-cols-6 text-gray-400 text-sm mb-2">
                         <div className="text-left p-2">Form</div>
@@ -945,35 +925,22 @@ export default function MyDashboard() {
                       </div>
                       <div className="text-sm">
                         {(() => {
-                          const clearedSet = new Set(memberTasks.filter(t => t.status === 'Cleared').map(t => t.sub_task_id))
-                          const completedRows = myOutbound.filter(i => {
-                            const fid = i.form_id ?? (forms.find(f => f.name === i.name && f.kind === 'Outbound')?.id || 0)
-                            const subs = mySubmissions.filter(s => s.form_id === fid && s.kind === 'Outbound')
-                            const latest = subs.sort((a,b)=>new Date(b.created_at).getTime()-new Date(a.created_at).getTime())[0]
-                            const ids = Array.isArray((latest as any)?.task_ids)
-                              ? (latest as any).task_ids
-                              : (latest?.tasks?.map(t => t.sub_task_id) || (forms.find(f => f.id === fid)?.task_ids || []))
-                            const total = ids.length
-                            const done = ids.filter((id: string) => clearedSet.has(id)).length
+                          const completedRows = mySubmissions.filter(s => s.kind === 'Outbound').filter(s => {
+                            const ids = Array.isArray((s as any)?.task_ids) ? (((s as any).task_ids || []) as string[]) : (((s as any)?.tasks || []).map((t: any) => t.sub_task_id))
+                            const total = typeof (s as any)?.total_count === 'number' ? Number((s as any).total_count) : ids.length
+                            const done = typeof (s as any)?.completed_count === 'number' ? Number((s as any).completed_count) : 0
                             return total > 0 && done === total
                           })
                           if (!completedRows.length) return (<div className="text-gray-400 text-sm">None</div>)
                           return completedRows.map(i => (
                             <div key={`out-${i.id}`} className="grid grid-cols-6 items-center border-t border-github-border text-gray-300">
-                              <div className="p-2">{i.name}</div>
+                              <div className="p-2">{i.form_name}</div>
                               <div className="p-2">{user?.unit_id || ''}</div>
                               <div className="p-2">{user?.edipi || ''}</div>
                               <div className="p-2">{new Date(i.created_at).toLocaleDateString()}</div>
                               <div className="p-2">{(() => {
-                                const fid = i.form_id ?? (forms.find(f => f.name === i.name && f.kind === 'Outbound')?.id || 0)
-                                const subs = mySubmissions.filter(s => s.form_id === fid && s.kind === 'Outbound')
-                                const latest = subs.sort((a,b)=>new Date(b.created_at).getTime()-new Date(a.created_at).getTime())[0]
-                                const ids = Array.isArray((latest as any)?.task_ids)
-                                  ? (latest as any).task_ids
-                                  : (latest?.tasks?.map(t => t.sub_task_id) || (forms.find(f => f.id === fid)?.task_ids || []))
-                                const total = ids.length
-                                const cleared = new Set(memberTasks.filter(t => t.status === 'Cleared').map(t => t.sub_task_id))
-                                const done = ids.filter((id: string) => cleared.has(id)).length
+                                const total = typeof (i as any)?.total_count === 'number' ? Number((i as any).total_count) : (Array.isArray((i as any)?.task_ids) ? (((i as any).task_ids || []) as string[]).length : (((i as any)?.tasks || []) as any[]).length)
+                                const done = typeof (i as any)?.completed_count === 'number' ? Number((i as any).completed_count) : 0
                                 return `${done}/${total}`
                               })()}</div>
                               <div className="p-2">
@@ -981,7 +948,7 @@ export default function MyDashboard() {
                                   className="px-2 py-1 bg-github-blue hover:bg-blue-600 text-white rounded text-xs"
                                   onClick={async () => {
                                     if (!user) return
-                                    const form = i.form_id ? forms.find(f => f.id === i.form_id) : forms.find(f => f.name === i.name && f.kind === 'Outbound')
+                                    const form = i.form_id ? forms.find(f => f.id === i.form_id) : forms.find(f => f.name === i.form_name && f.kind === 'Outbound')
                                     if (!form) return
                                     let tasks: { sub_task_id: string; description: string; status: 'Pending' }[] = []
                                     try {
@@ -995,7 +962,7 @@ export default function MyDashboard() {
                                           status: 'Pending' as const,
                                         }))
                                       const completedSet = new Set(progress.progress_tasks.filter(t => t.status === 'Cleared').map(t => t.sub_task_id))
-                                      const completedBySection: Record<string, { text: string; note?: string; at?: string }[]> = {}
+                                      const completedBySection: Record<string, { text: string; note?: string; at?: string; by?: string }[]> = {}
                                       for (const tid of form.task_ids) {
                                         if (!completedSet.has(tid)) continue
                                         const label = taskLabels[tid]
@@ -1004,14 +971,18 @@ export default function MyDashboard() {
                                         const desc = (label?.description || tid)
                                         const entry = (progress.progress_tasks || []).find(t => String(t.sub_task_id) === String(tid)) as any
                                         const lastLog = Array.isArray(entry?.logs) && entry.logs.length ? entry.logs[entry.logs.length - 1] : undefined
-                                        const row = { text: desc, note: lastLog?.note, at: (lastLog?.at || (entry as any)?.cleared_at_timestamp) }
+                                        const byUserId = (entry as any)?.cleared_by_user_id || ''
+                                        const actor = byUserId ? memberMap[byUserId] : undefined
+                                        const byEdipi = (entry as any)?.cleared_by_edipi || ''
+                                        const by = actor ? [actor.rank, [actor.first_name, actor.last_name].filter(Boolean).join(' ')].filter(Boolean).join(' ') : (byEdipi ? `EDIPI ${byEdipi}` : '')
+                                        const row = { text: desc, note: lastLog?.note, at: (lastLog?.at || (entry as any)?.cleared_at_timestamp), by }
                                         if (!completedBySection[secName]) completedBySection[secName] = []
                                         completedBySection[secName].push(row)
                                       }
                                       setPreviewCompletedBySection(completedBySection)
-                                      const consolidated: Array<{ section: string; task: string; note?: string; at?: string }> = []
+                                      const consolidated: Array<{ section: string; task: string; note?: string; at?: string; by?: string }> = []
                                       for (const [sec, rows] of Object.entries(completedBySection)) {
-                                        for (const r of rows) consolidated.push({ section: sec, task: r.text, note: r.note, at: r.at })
+                                        for (const r of rows) consolidated.push({ section: sec, task: r.text, note: r.note, at: r.at, by: r.by })
                                       }
                                       setPreviewCompletedRows(consolidated)
                                     } catch (err) { console.error(err) }
@@ -1037,7 +1008,7 @@ export default function MyDashboard() {
                       </div>
                     </div>
                   ) : (
-                    <p className="text-gray-400 text-sm">No outbound items</p>
+                    <p className="text-gray-400 text-sm">No outbound forms</p>
                   )}
                 </div>
                 )}
@@ -1052,7 +1023,7 @@ export default function MyDashboard() {
         {createOpen && (
           <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50">
             <div className="w-full max-w-md bg-black border border-github-border rounded-xl p-6">
-              <h3 className="text-white text-lg mb-4">Create Item</h3>
+              <h3 className="text-white text-lg mb-4">Create Form</h3>
               <div className="grid grid-cols-1 gap-3">
                 <select value={newKind} onChange={e => {
                   const k = e.target.value as any
@@ -1101,7 +1072,6 @@ export default function MyDashboard() {
                   if (!user || !selectedFormId) return
                   const form = forms.find(f => f.id === selectedFormId)
                   if (!form) return
-                  await createMyItem(user.user_id, form.name, newKind, form.id)
                   const tasks = form.task_ids.map(tid => ({ sub_task_id: tid, description: (taskLabels[tid]?.description || tid), status: 'Pending' as const }))
                   const submission: any = {
                     user_id: user.user_id,
@@ -1119,8 +1089,6 @@ export default function MyDashboard() {
                   if (newKind === 'Inbound') submission.arrival_date = arrivalDate || new Date().toISOString().slice(0,10)
                   if (newKind === 'Outbound') submission.departure_date = departureDate || new Date().toISOString().slice(0,10)
                   try { await createSubmission(submission); setMySubmissions(await listSubmissions(user.user_id)) } catch (err) { console.error(err) }
-                  setMyInbound(await listMyItems(user.user_id, 'Inbound'))
-                  setMyOutbound(await listMyItems(user.user_id, 'Outbound'))
                   setCreateOpen(false)
                   setNewKind('Inbound')
                   const first = forms.filter(f => f.kind === 'Inbound')[0]
@@ -1189,7 +1157,7 @@ export default function MyDashboard() {
                         <div key={`row-${i}`} className="grid grid-cols-4 items-center border-t border-github-border text-gray-300">
                           <div className="p-2">{r.section || ''}</div>
                           <div className="p-2">{r.task}</div>
-                          <div className="p-2">{r.note || ''}</div>
+                          <div className="p-2">{[r.note, (r.by ? `— ${r.by}` : '')].filter(Boolean).join(' ')}</div>
                           <div className="p-2">{r.at || ''}</div>
                         </div>
                       ))}
