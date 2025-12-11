@@ -3,15 +3,13 @@ import { useMemo, useState } from 'react'
 export default function BrandMark() {
   const base = import.meta.env.BASE_URL || '/'
   const candidates = useMemo(() => [
-    // 1x1 transparent PNG default to avoid network errors when logo is missing
-    'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGMAAQAABQABDQottQAAAABJRU5ErkJggg==',
+    `/assets/images/logo.png`,
     `${base}assets/images/logo.png`,
     `${base}images/logo.png`,
     `${base}logo.png`,
-    `/assets/images/logo.png`,
     `/logo.png`,
     `${base}logo.png`,
-    `/logo.pngg`,
+    'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGMAAQAABQABDQottQAAAABJRU5ErkJggg==',
   ], [base])
   const [idx, setIdx] = useState(0)
   const src = candidates[idx] || candidates[0]

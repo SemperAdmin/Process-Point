@@ -231,12 +231,6 @@ export default function SectionManagerDashboard() {
             >
               Outbound
             </button>
-            <button
-              onClick={() => setTab('forms')}
-              className={`px-4 py-3 text-sm ${tab === 'forms' ? 'text-white border-b-2 border-github-blue' : 'text-gray-400'}`}
-            >
-              Forms
-            </button>
           </div>
           <div className="p-6">
             {tab === 'inbound' && (
@@ -468,37 +462,6 @@ export default function SectionManagerDashboard() {
                     <button onClick={() => { setPreviewSubmission(null); setPreviewPendingBySection({}); setPreviewCompletedRows([]) }} className="px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded">Close</button>
                   </div>
                 </div>
-              </div>
-            )}
-            {tab === 'forms' && (
-              <div className="space-y-6">
-                <div className="text-gray-300">Forms submitted by members in your section</div>
-                <table className="min-w-full text-sm">
-                  <thead className="text-gray-400">
-                    <tr>
-                      <th className="text-left p-2">Member</th>
-                      <th className="text-left p-2">EDIPI</th>
-                      <th className="text-left p-2">Form</th>
-                      <th className="text-left p-2">Type</th>
-                      <th className="text-left p-2">Created At</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {sectionForms.map(row => {
-                      const m = memberMap[row.user_id]
-                      const name = m ? [m.first_name, m.last_name].filter(Boolean).join(' ') : row.user_id
-                      return (
-                        <tr key={`${row.user_id}-${row.name}-${row.created_at}`} className="border-t border-github-border text-gray-300">
-                          <td className="p-2">{[m?.rank, name].filter(Boolean).join(' ')}</td>
-                          <td className="p-2">{row.edipi || ''}</td>
-                          <td className="p-2">{row.name}</td>
-                          <td className="p-2">{row.kind}</td>
-                          <td className="p-2">{row.created_at || ''}</td>
-                        </tr>
-                      )
-                    })}
-                  </tbody>
-                </table>
               </div>
             )}
             {tab === 'outbound' && (
