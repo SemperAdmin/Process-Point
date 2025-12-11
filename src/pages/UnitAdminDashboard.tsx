@@ -1368,13 +1368,15 @@ export default function UnitAdminDashboard() {
           <div className="w-full max-w-md bg-black border border-github-border rounded-xl p-6">
             <h3 className="text-white text-lg mb-4">QR Code for {qrForm.name}</h3>
             <div className="flex flex-col items-center gap-4">
-              <div className="bg-white p-4 rounded-lg qr-modal-svg">
+              <div className="bg-white p-4 rounded-lg qr-modal-svg flex flex-col items-center">
+                <div className="text-black font-semibold text-center mb-2 text-sm">{qrForm.name}</div>
                 <QRCodeSVG
                   value={`${window.location.origin}${import.meta.env.BASE_URL}enroll?form=${qrForm.id}&unit=${unitId}&kind=${qrForm.kind}`}
                   size={200}
                   level="H"
                   includeMargin={true}
                 />
+                <div className="text-black text-xs text-center mt-2">Process Point by Semper Admin</div>
               </div>
               <div className="text-center text-gray-400 text-sm">
                 <p className="mb-2">Scan to start <span className="text-white">{qrForm.kind}</span> process</p>
@@ -1400,9 +1402,26 @@ export default function UnitAdminDashboard() {
                     const ctx = canvas.getContext('2d')
                     const img = new Image()
                     img.onload = () => {
-                      canvas.width = img.width
-                      canvas.height = img.height
-                      ctx?.drawImage(img, 0, 0)
+                      const padding = 20
+                      const topTextHeight = 30
+                      const bottomTextHeight = 25
+                      canvas.width = img.width + padding * 2
+                      canvas.height = img.height + topTextHeight + bottomTextHeight + padding * 2
+                      if (ctx) {
+                        // White background
+                        ctx.fillStyle = 'white'
+                        ctx.fillRect(0, 0, canvas.width, canvas.height)
+                        // Form name at top
+                        ctx.fillStyle = 'black'
+                        ctx.font = 'bold 14px Inter, sans-serif'
+                        ctx.textAlign = 'center'
+                        ctx.fillText(qrForm.name, canvas.width / 2, padding + 16)
+                        // QR code
+                        ctx.drawImage(img, padding, padding + topTextHeight)
+                        // Branding at bottom
+                        ctx.font = '11px Inter, sans-serif'
+                        ctx.fillText('Process Point by Semper Admin', canvas.width / 2, canvas.height - padding)
+                      }
                       const a = document.createElement('a')
                       a.download = `${qrForm.name.replace(/\s+/g, '_')}_QR.png`
                       a.href = canvas.toDataURL('image/png')
