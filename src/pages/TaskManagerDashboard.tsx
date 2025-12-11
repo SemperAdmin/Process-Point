@@ -196,11 +196,12 @@ export default function TaskManagerDashboard() {
               // Track which submission this pending task belongs to
               if (!submissionTracking[subId]) submissionTracking[subId] = {}
               submissionTracking[subId][memberId] = submissionId
-              if (kind === 'Inbound' && inboundTaskIds.has(subId)) {
+              // Add to kind-specific pending list based on submission type (no task ID check)
+              if (kind === 'Inbound') {
                 if (!inboundByTask[subId]) inboundByTask[subId] = new Set()
                 inboundByTask[subId].add(memberId)
               }
-              if (kind === 'Outbound' && outboundTaskIds.has(subId)) {
+              if (kind === 'Outbound') {
                 if (!outboundByTask[subId]) outboundByTask[subId] = new Set()
                 outboundByTask[subId].add(memberId)
               }
@@ -208,11 +209,12 @@ export default function TaskManagerDashboard() {
             if (t.status === 'Cleared') {
               if (!allCompletedByTask[subId]) allCompletedByTask[subId] = new Set()
               allCompletedByTask[subId].add(memberId)
-              if (kind === 'Inbound' && inboundTaskIds.has(subId)) {
+              // Add to kind-specific completed list based on submission type (no task ID check)
+              if (kind === 'Inbound') {
                 if (!inboundCompletedByTask[subId]) inboundCompletedByTask[subId] = new Set()
                 inboundCompletedByTask[subId].add(memberId)
               }
-              if (kind === 'Outbound' && outboundTaskIds.has(subId)) {
+              if (kind === 'Outbound') {
                 if (!outboundCompletedByTask[subId]) outboundCompletedByTask[subId] = new Set()
                 outboundCompletedByTask[subId].add(memberId)
               }
@@ -757,32 +759,26 @@ export default function TaskManagerDashboard() {
                       setCreateOpen(true) }} className="px-4 py-2 bg-github-blue hover:bg-blue-600 text-white rounded">Create Task</button>
                   </div>
                 </div>
-                <div className="grid grid-cols-3 gap-3">
-                  <input value={taskFilterText} onChange={e => setTaskFilterText(e.target.value)} placeholder="Search tasks" className="px-3 py-2 bg-github-gray bg-opacity-20 border border-github-border rounded text-white" />
-                  <select value={taskFilterKind} onChange={e => setTaskFilterKind(e.target.value as any)} className="px-3 py-2 bg-github-gray bg-opacity-20 border border-github-border rounded text-white">
+                <div className="flex flex-wrap gap-2">
+                  <input value={taskFilterText} onChange={e => setTaskFilterText(e.target.value)} placeholder="Search tasks" className="flex-1 min-w-[120px] px-3 py-2 bg-github-gray bg-opacity-20 border border-github-border rounded text-white text-sm" />
+                  <select value={taskFilterKind} onChange={e => setTaskFilterKind(e.target.value as any)} className="px-3 py-2 bg-github-gray bg-opacity-20 border border-github-border rounded text-white text-sm">
                     <option value="All">All</option>
                     <option value="Text">Text</option>
                     <option value="Date">Date</option>
                     <option value="Options">Options</option>
                   </select>
                 </div>
-                <div className="text-gray-400 text-sm font-semibold">
-                  <div className="grid grid-cols-[30%_20%_25%_15%_10%]">
-                    <div className="text-left p-2">Description</div>
-                    <div className="text-left p-2">Location</div>
-                    <div className="text-left p-2">Instructions</div>
-                    <div className="text-left p-2">Completion</div>
-                    <div className="text-left p-2">Actions</div>
-                  </div>
-                </div>
-                <table className="min-w-full table-fixed text-sm">
-                  <colgroup>
-                    <col style={{ width: '30%' }} />
-                    <col style={{ width: '20%' }} />
-                    <col style={{ width: '25%' }} />
-                    <col style={{ width: '15%' }} />
-                    <col style={{ width: '10%' }} />
-                  </colgroup>
+                <div className="overflow-x-auto">
+                <table className="min-w-full text-xs sm:text-sm">
+                  <thead className="text-gray-400 text-sm font-semibold">
+                    <tr>
+                      <th className="text-left p-2 min-w-[150px]">Description</th>
+                      <th className="text-left p-2 min-w-[80px]">Location</th>
+                      <th className="text-left p-2 min-w-[100px] hidden sm:table-cell">Instructions</th>
+                      <th className="text-left p-2 min-w-[100px]">Completion</th>
+                      <th className="text-left p-2 min-w-[120px]">Actions</th>
+                    </tr>
+                  </thead>
                   <tbody>
                     {filteredScopedSubTasks.map(t => (
                       <tr key={t.id} className="border-t border-github-border text-gray-300">
@@ -797,7 +793,7 @@ export default function TaskManagerDashboard() {
                         ) : (t.map_url || t.location ? (
                           <a href={(t.map_url || googleMapsLink(t.location || ''))} target="_blank" rel="noopener noreferrer" className="text-semper-gold hover:underline">{t.location || 'Map'}</a>
                         ) : '')}</td>
-                        <td className="p-2">{taskEditingId === t.id ? (
+                        <td className="p-2 hidden sm:table-cell">{taskEditingId === t.id ? (
                           <input value={taskEditInstructions} onChange={e => setTaskEditInstructions(e.target.value)} className="w-full px-2 py-1 bg-github-gray bg-opacity-20 border border-github-border rounded text-white" />
                         ) : (t.instructions || '')}</td>
                         
@@ -849,6 +845,7 @@ export default function TaskManagerDashboard() {
                     ))}
                   </tbody>
                 </table>
+                </div>
                 {errorMsg && <div className="text-red-400 text-sm">{errorMsg}</div>}
 
                 
