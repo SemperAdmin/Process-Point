@@ -199,8 +199,8 @@ export default function CompanyManagerDashboard() {
     load()
   }, [user])
 
-  const overrideRole = getRoleOverride(user?.user_id || '')?.org_role
-  const isCompanyManager = (normalizeOrgRole(user?.org_role) === 'Company_Manager' || normalizeOrgRole(overrideRole) === 'Company_Manager')
+  const overrideRole = getRoleOverride(user?.edipi || '')?.org_role
+  const isCompanyManager = (normalizeOrgRole(overrideRole) === 'Company_Manager' || normalizeOrgRole(user?.org_role) === 'Company_Manager')
   if (!user || !isCompanyManager) {
     return (
       <div className="min-h-screen bg-github-dark flex items-center justify-center">
