@@ -1270,7 +1270,10 @@ export default function UnitAdminDashboard() {
                       const override = getRoleOverride(p.edipi)
                       const role = override?.org_role || p.org_role || 'Member'
                       const name = [p.first_name, p.last_name].filter(Boolean).join(' ')
-                      const company = p.company_id || ''
+                      const companyLabel = (() => {
+                        const comp = companyRows.find(c => c.company_id === p.company_id)
+                        return comp?.display_name || p.company_id || ''
+                      })()
                       const sectionLabel = (() => {
                         const byId = sections.find(s => String(s.id) === String(p.platoon_id))
                         if (byId) return (byId as any).display_name || byId.section_name
@@ -1281,11 +1284,11 @@ export default function UnitAdminDashboard() {
                         <tr key={p.edipi} className="border-t border-github-border text-gray-300">
                           <td className="p-2">
                             <div>{[p.rank, name].filter(Boolean).join(' ')}</div>
-                            <div className="text-xs text-gray-500 sm:hidden">{[company, sectionLabel].filter(Boolean).join(' • ')}</div>
+                            <div className="text-xs text-gray-500 sm:hidden">{[companyLabel, sectionLabel].filter(Boolean).join(' • ')}</div>
                           </td>
-                          <td className="p-2 hidden sm:table-cell">{company || ''}</td>
+                          <td className="p-2 hidden sm:table-cell">{companyLabel || ''}</td>
                           <td className="p-2 hidden sm:table-cell">{sectionLabel}</td>
-                          <td className="p-2 whitespace-nowrap">{role === 'Section_Manager' ? 'Sec Mgr' : role}</td>
+                          <td className="p-2 whitespace-nowrap">{role === 'Section_Manager' ? 'Sec Mgr' : role === 'Company_Manager' ? 'Co Mgr' : role}</td>
                           <td className="p-2">
                             <button
                               onClick={() => {

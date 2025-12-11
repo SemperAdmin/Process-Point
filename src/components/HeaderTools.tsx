@@ -92,7 +92,7 @@ export default function HeaderTools() {
                   Section Manager
                 </button>
               )}
-              {effectiveRole === 'Section_Manager' && (
+              {(effectiveRole === 'Section_Manager' || effectiveRole === 'Company_Manager') && (
                 <button onMouseDown={() => { setOpen(false); navigate('/task-manager') }} className="w-full flex items-center px-3 py-2 text-left hover:bg-gray-700 text-white">
                   <ListChecks className="w-5 h-5 mr-2" />
                   Task Manager
