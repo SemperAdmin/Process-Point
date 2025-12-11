@@ -515,45 +515,40 @@ export default function MyDashboard() {
                                     const fid = (s as any).form_id || (forms.find(f => f.name === s.form_name && f.kind === 'Inbound')?.id || 0)
                                     const form = forms.find(f => f.id === fid) || forms.find(f => f.name === s.form_name && f.kind === 'Inbound')
                                     if (!form) return
-                                    let tasks: { sub_task_id: string; description: string; status: 'Pending' }[] = []
-                                    try {
-                                      const progress = await getProgressByMember(user.user_id)
-                                      const clearedSet = new Set(progress.progress_tasks.filter(t => t.status === 'Cleared').map(t => t.sub_task_id))
-                                      const taskIds = Array.isArray((s as any)?.task_ids)
-                                        ? (((s as any).task_ids || []) as string[])
-                                        : ((((s as any)?.tasks || []) as any[]).map((t: any) => t.sub_task_id) || form.task_ids)
-                                      tasks = taskIds
-                                        .filter((tid: string) => !clearedSet.has(tid))
-                                        .map(tid => ({
-                                          sub_task_id: tid,
-                                          description: (taskLabels[tid]?.description || tid),
-                                          status: 'Pending' as const,
-                                        }))
-                                      const completedSet = new Set(progress.progress_tasks.filter(t => t.status === 'Cleared').map(t => t.sub_task_id))
-                                      const completedBySection: Record<string, { text: string; note?: string; at?: string; by?: string }[]> = {}
-                                      for (const tid of taskIds) {
-                                        if (!completedSet.has(tid)) continue
-                                        const label = taskLabels[tid]
-                                        const secCode = label?.section_name || ''
-                                        const secName = secCode ? (sectionDisplayMap[secCode] || secCode) : ''
-                                        const desc = (label?.description || tid)
-                                        const entry = progress.progress_tasks.find(t => String(t.sub_task_id) === String(tid)) as any
-                                        const lastLog = Array.isArray(entry?.logs) && entry.logs.length ? entry.logs[entry.logs.length - 1] : undefined
-                                        const byUserId = (entry as any)?.cleared_by_user_id || ''
-                                        const actor = byUserId ? memberMap[byUserId] : undefined
-                                        const byEdipi = (entry as any)?.cleared_by_edipi || ''
-                                        const by = actor ? [actor.rank, [actor.first_name, actor.last_name].filter(Boolean).join(' ')].filter(Boolean).join(' ') : (byEdipi ? `EDIPI ${byEdipi}` : '')
-                                        const row = { text: desc, note: lastLog?.note, at: lastLog?.at, by }
-                                        if (!completedBySection[secName]) completedBySection[secName] = []
-                                        completedBySection[secName].push(row)
-                                      }
-                                      setPreviewCompletedBySection(completedBySection)
-                                      const consolidated: Array<{ section: string; task: string; note?: string; at?: string; by?: string }> = []
-                                      for (const [sec, rows2] of Object.entries(completedBySection)) {
-                                        for (const r of rows2) consolidated.push({ section: sec, task: r.text, note: r.note, at: r.at, by: r.by })
-                                      }
-                                      setPreviewCompletedRows(consolidated)
-                                    } catch (err) { console.error(err) }
+                                    // CRITICAL: Use the SUBMISSION's own tasks array, NOT global members_progress
+                                    const submissionTasks = (s.tasks || []) as Array<{ sub_task_id: string; description?: string; status: 'Pending' | 'Cleared' | 'Skipped' }>
+                                    const clearedSet = new Set(submissionTasks.filter(t => t.status === 'Cleared').map(t => t.sub_task_id))
+                                    const pendingSet = new Set(submissionTasks.filter(t => t.status === 'Pending').map(t => t.sub_task_id))
+
+                                    // Build pending tasks from this submission's own data
+                                    const tasks = submissionTasks
+                                      .filter(t => t.status === 'Pending')
+                                      .map(t => ({
+                                        sub_task_id: t.sub_task_id,
+                                        description: (t.description || taskLabels[t.sub_task_id]?.description || t.sub_task_id),
+                                        status: 'Pending' as const,
+                                      }))
+
+                                    // Build completed section from this submission's own cleared tasks
+                                    const completedBySection: Record<string, { text: string; note?: string; at?: string; by?: string }[]> = {}
+                                    for (const t of submissionTasks) {
+                                      if (t.status !== 'Cleared') continue
+                                      const label = taskLabels[t.sub_task_id]
+                                      const secCode = label?.section_name || ''
+                                      const secName = secCode ? (sectionDisplayMap[secCode] || secCode) : ''
+                                      const desc = (t.description || label?.description || t.sub_task_id)
+                                      // Note: submission tasks don't store who cleared them - that's in members_progress
+                                      const row = { text: desc, note: undefined, at: undefined, by: undefined }
+                                      if (!completedBySection[secName]) completedBySection[secName] = []
+                                      completedBySection[secName].push(row)
+                                    }
+                                    setPreviewCompletedBySection(completedBySection)
+                                    const consolidated: Array<{ section: string; task: string; note?: string; at?: string; by?: string }> = []
+                                    for (const [sec, rows2] of Object.entries(completedBySection)) {
+                                      for (const r of rows2) consolidated.push({ section: sec, task: r.text, note: r.note, at: r.at, by: r.by })
+                                    }
+                                    setPreviewCompletedRows(consolidated)
+
                                     const pendingBySection: Record<string, { description: string; location?: string; map_url?: string; instructions?: string }[]> = {}
                                     for (const t of tasks) {
                                       const label = taskLabels[t.sub_task_id]
@@ -806,45 +801,39 @@ export default function MyDashboard() {
                                     const fid = (s as any).form_id || (forms.find(f => f.name === s.form_name && f.kind === 'Outbound')?.id || 0)
                                     const form = forms.find(f => f.id === fid) || forms.find(f => f.name === s.form_name && f.kind === 'Outbound')
                                     if (!form) return
-                                    let tasks: { sub_task_id: string; description: string; status: 'Pending' }[] = []
-                                    try {
-                                      const progress = await getProgressByMember(user.user_id)
-                                      const clearedSet = new Set(progress.progress_tasks.filter(t => t.status === 'Cleared').map(t => t.sub_task_id))
-                                      const taskIds = Array.isArray((s as any)?.task_ids)
-                                        ? (((s as any).task_ids || []) as string[])
-                                        : ((((s as any)?.tasks || []) as any[]).map((t: any) => t.sub_task_id) || form.task_ids)
-                                      tasks = taskIds
-                                        .filter((tid: string) => !clearedSet.has(tid))
-                                        .map(tid => ({
-                                          sub_task_id: tid,
-                                          description: (taskLabels[tid]?.description || tid),
-                                          status: 'Pending' as const,
-                                        }))
-                                      const completedSet = new Set(progress.progress_tasks.filter(t => t.status === 'Cleared').map(t => t.sub_task_id))
-                                      const completedBySection: Record<string, { text: string; note?: string; at?: string; by?: string }[]> = {}
-                                      for (const tid of taskIds) {
-                                        if (!completedSet.has(tid)) continue
-                                        const label = taskLabels[tid]
-                                        const secCode = label?.section_name || ''
-                                        const secName = secCode ? (sectionDisplayMap[secCode] || secCode) : ''
-                                        const desc = (label?.description || tid)
-                                        const entry = progress.progress_tasks.find(t => String(t.sub_task_id) === String(tid)) as any
-                                        const lastLog = Array.isArray(entry?.logs) && entry.logs.length ? entry.logs[entry.logs.length - 1] : undefined
-                                        const byUserId = (entry as any)?.cleared_by_user_id || ''
-                                        const actor = byUserId ? memberMap[byUserId] : undefined
-                                        const byEdipi = (entry as any)?.cleared_by_edipi || ''
-                                        const by = actor ? [actor.rank, [actor.first_name, actor.last_name].filter(Boolean).join(' ')].filter(Boolean).join(' ') : (byEdipi ? `EDIPI ${byEdipi}` : '')
-                                        const row = { text: desc, note: lastLog?.note, at: lastLog?.at, by }
-                                        if (!completedBySection[secName]) completedBySection[secName] = []
-                                        completedBySection[secName].push(row)
-                                      }
-                                      setPreviewCompletedBySection(completedBySection)
-                                      const consolidated: Array<{ section: string; task: string; note?: string; at?: string; by?: string }> = []
-                                      for (const [sec, rows2] of Object.entries(completedBySection)) {
-                                        for (const r of rows2) consolidated.push({ section: sec, task: r.text, note: r.note, at: r.at, by: r.by })
-                                      }
-                                      setPreviewCompletedRows(consolidated)
-                                    } catch (err) { console.error(err) }
+                                    // CRITICAL: Use the SUBMISSION's own tasks array, NOT global members_progress
+                                    const submissionTasks = (s.tasks || []) as Array<{ sub_task_id: string; description?: string; status: 'Pending' | 'Cleared' | 'Skipped' }>
+                                    const clearedSet = new Set(submissionTasks.filter(t => t.status === 'Cleared').map(t => t.sub_task_id))
+                                    const pendingSet = new Set(submissionTasks.filter(t => t.status === 'Pending').map(t => t.sub_task_id))
+
+                                    // Build pending tasks from this submission's own data
+                                    const tasks = submissionTasks
+                                      .filter(t => t.status === 'Pending')
+                                      .map(t => ({
+                                        sub_task_id: t.sub_task_id,
+                                        description: (t.description || taskLabels[t.sub_task_id]?.description || t.sub_task_id),
+                                        status: 'Pending' as const,
+                                      }))
+
+                                    // Build completed section from this submission's own cleared tasks
+                                    const completedBySection: Record<string, { text: string; note?: string; at?: string; by?: string }[]> = {}
+                                    for (const t of submissionTasks) {
+                                      if (t.status !== 'Cleared') continue
+                                      const label = taskLabels[t.sub_task_id]
+                                      const secCode = label?.section_name || ''
+                                      const secName = secCode ? (sectionDisplayMap[secCode] || secCode) : ''
+                                      const desc = (t.description || label?.description || t.sub_task_id)
+                                      const row = { text: desc, note: undefined, at: undefined, by: undefined }
+                                      if (!completedBySection[secName]) completedBySection[secName] = []
+                                      completedBySection[secName].push(row)
+                                    }
+                                    setPreviewCompletedBySection(completedBySection)
+                                    const consolidated: Array<{ section: string; task: string; note?: string; at?: string; by?: string }> = []
+                                    for (const [sec, rows2] of Object.entries(completedBySection)) {
+                                      for (const r of rows2) consolidated.push({ section: sec, task: r.text, note: r.note, at: r.at, by: r.by })
+                                    }
+                                    setPreviewCompletedRows(consolidated)
+
                                     const pendingBySection: Record<string, { description: string; location?: string; map_url?: string; instructions?: string }[]> = {}
                                     for (const t of tasks) {
                                       const label = taskLabels[t.sub_task_id]
