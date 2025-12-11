@@ -245,11 +245,12 @@ export default function SectionManagerDashboard() {
                 {inboundView === 'Pending' && (
                   <div className="space-y-6">
                     <div className="text-gray-300">Pending tasks assigned to your section</div>
-                    <table className="min-w-full text-sm">
+                    <div className="overflow-x-auto">
+                    <table className="min-w-full table-fixed text-xs sm:text-sm">
                       <thead className="text-gray-400">
                         <tr>
                           <th className="text-left p-2">Member</th>
-                          <th className="text-left p-2">EDIPI</th>
+                          <th className="text-left p-2 hidden sm:table-cell">EDIPI</th>
                           <th className="text-left p-2">Form</th>
                           
                           <th className="text-left p-2">Done/Total</th>
@@ -263,8 +264,8 @@ export default function SectionManagerDashboard() {
                           const name = m ? [m.first_name, m.last_name].filter(Boolean).join(' ') : row.user_id
                           return (
                             <tr key={`${row.user_id}-${row.form_name}-${row.created_at}`} className="border-t border-github-border text-gray-300">
-                              <td className="p-2">{[m?.rank, name].filter(Boolean).join(' ')}</td>
-                              <td className="p-2">{m?.edipi || ''}</td>
+                              <td className="p-2 truncate">{[m?.rank, name].filter(Boolean).join(' ')}</td>
+                              <td className="p-2 hidden sm:table-cell">{m?.edipi || ''}</td>
                               <td className="p-2">{row.form_name}</td>
                               
                               <td className="p-2">{`${row.cleared}/${row.total}`}</td>
@@ -320,17 +321,19 @@ export default function SectionManagerDashboard() {
                         })}
                       </tbody>
                     </table>
+                    </div>
                   </div>
                 )}
 
                 {inboundView === 'Completed' && (
                   <div className="space-y-6">
                     <div className="text-gray-300">Completed tasks in your section</div>
-                    <table className="min-w-full text-sm">
+                    <div className="overflow-x-auto">
+                    <table className="min-w-full table-fixed text-xs sm:text-sm">
                       <thead className="text-gray-400">
                         <tr>
                           <th className="text-left p-2">Member</th>
-                          <th className="text-left p-2">EDIPI</th>
+                          <th className="text-left p-2 hidden sm:table-cell">EDIPI</th>
                           <th className="text-left p-2">Form</th>
                           
                           <th className="text-left p-2">Completed</th>
@@ -344,8 +347,8 @@ export default function SectionManagerDashboard() {
                           const name = m ? [m.first_name, m.last_name].filter(Boolean).join(' ') : row.user_id
                           return (
                             <tr key={`${row.user_id}-${row.form_name}-${row.created_at}`} className="border-t border-github-border text-gray-300">
-                              <td className="p-2">{[m?.rank, name].filter(Boolean).join(' ')}</td>
-                              <td className="p-2">{m?.edipi || ''}</td>
+                              <td className="p-2 truncate">{[m?.rank, name].filter(Boolean).join(' ')}</td>
+                              <td className="p-2 hidden sm:table-cell">{m?.edipi || ''}</td>
                               <td className="p-2">{row.form_name}</td>
                               
                               <td className="p-2">{new Date(((row as any)?.completed_at || row.created_at || '')).toLocaleDateString()}</td>
@@ -401,6 +404,7 @@ export default function SectionManagerDashboard() {
                         })}
                       </tbody>
                     </table>
+                    </div>
                   </div>
                 )}
               </div>
@@ -435,7 +439,8 @@ export default function SectionManagerDashboard() {
                     <div>
                       <h4 className="text-white text-sm mb-2">Completed</h4>
                       {previewCompletedRows.length ? (
-                        <table className="min-w-full text-sm">
+                        <div className="overflow-x-auto">
+                        <table className="min-w-full table-fixed text-xs sm:text-sm">
                           <thead className="text-gray-400">
                             <tr>
                               <th className="text-left p-2">Section</th>
@@ -447,14 +452,15 @@ export default function SectionManagerDashboard() {
                           <tbody>
                             {previewCompletedRows.map((r, i) => (
                               <tr key={`row-${i}`} className="border-t border-github-border text-gray-300">
-                                <td className="p-2">{r.section || ''}</td>
-                                <td className="p-2">{r.task}</td>
-                                <td className="p-2">{r.note || ''}</td>
+                                <td className="p-2 truncate">{r.section || ''}</td>
+                                <td className="p-2 truncate">{r.task}</td>
+                                <td className="p-2 truncate">{r.note || ''}</td>
                                 <td className="p-2">{r.at || ''}</td>
                               </tr>
                             ))}
                           </tbody>
                         </table>
+                        </div>
                       ) : (<div className="text-gray-400 text-sm">None</div>)}
                     </div>
                   </div>
@@ -476,11 +482,12 @@ export default function SectionManagerDashboard() {
                 {outboundView === 'Pending' && (
                   <div className="space-y-6">
                     <div className="text-gray-300">Pending tasks assigned to your section</div>
-                    <table className="min-w-full text-sm">
+                    <div className="overflow-x-auto">
+                    <table className="min-w-full table-fixed text-xs sm:text-sm">
                       <thead className="text-gray-400">
                         <tr>
                           <th className="text-left p-2">Member</th>
-                          <th className="text-left p-2">EDIPI</th>
+                          <th className="text-left p-2 hidden sm:table-cell">EDIPI</th>
                           <th className="text-left p-2">Form</th>
                           
                           <th className="text-left p-2">Done/Total</th>
@@ -494,8 +501,8 @@ export default function SectionManagerDashboard() {
                           const name = m ? [m.first_name, m.last_name].filter(Boolean).join(' ') : row.user_id
                           return (
                             <tr key={`${row.user_id}-${row.form_name}-${row.created_at}`} className="border-t border-github-border text-gray-300">
-                              <td className="p-2">{[m?.rank, name].filter(Boolean).join(' ')}</td>
-                              <td className="p-2">{m?.edipi || ''}</td>
+                              <td className="p-2 truncate">{[m?.rank, name].filter(Boolean).join(' ')}</td>
+                              <td className="p-2 hidden sm:table-cell">{m?.edipi || ''}</td>
                               <td className="p-2">{row.form_name}</td>
                               
                               <td className="p-2">{`${row.cleared}/${row.total}`}</td>
@@ -551,17 +558,19 @@ export default function SectionManagerDashboard() {
                         })}
                       </tbody>
                     </table>
+                    </div>
                   </div>
                 )}
 
                 {outboundView === 'Completed' && (
                   <div className="space-y-6">
                     <div className="text-gray-300">Completed tasks in your section</div>
-                    <table className="min-w-full text-sm">
+                    <div className="overflow-x-auto">
+                    <table className="min-w-full table-fixed text-xs sm:text-sm">
                       <thead className="text-gray-400">
                         <tr>
                           <th className="text-left p-2">Member</th>
-                          <th className="text-left p-2">EDIPI</th>
+                          <th className="text-left p-2 hidden sm:table-cell">EDIPI</th>
                           <th className="text-left p-2">Form</th>
                           
                           <th className="text-left p-2">Completed</th>
@@ -575,8 +584,8 @@ export default function SectionManagerDashboard() {
                           const name = m ? [m.first_name, m.last_name].filter(Boolean).join(' ') : row.user_id
                           return (
                             <tr key={`${row.user_id}-${row.form_name}-${row.created_at}`} className="border-t border-github-border text-gray-300">
-                              <td className="p-2">{[m?.rank, name].filter(Boolean).join(' ')}</td>
-                              <td className="p-2">{m?.edipi || ''}</td>
+                              <td className="p-2 truncate">{[m?.rank, name].filter(Boolean).join(' ')}</td>
+                              <td className="p-2 hidden sm:table-cell">{m?.edipi || ''}</td>
                               <td className="p-2">{row.form_name}</td>
                               
                               <td className="p-2">{new Date(((row as any)?.completed_at || row.created_at || '')).toLocaleDateString()}</td>
@@ -632,6 +641,7 @@ export default function SectionManagerDashboard() {
                         })}
                       </tbody>
                     </table>
+                    </div>
                   </div>
                 )}
               </div>

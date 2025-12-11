@@ -460,12 +460,13 @@ export default function TaskManagerDashboard() {
                           <span className={`inline-flex items-center px-2 py-0.5 text-xs border border-github-border rounded bg-yellow-700 bg-opacity-30 text-yellow-300`}>{pendingCount}</span>
                         </div>
                         <div className="p-4">
-                          <table className="min-w-full text-sm">
+                          <div className="overflow-x-auto">
+                          <table className="min-w-full table-fixed text-xs sm:text-sm">
                             <thead className="text-gray-400">
                               <tr>
                                 <th className="text-left p-2">Type</th>
                                 <th className="text-left p-2">Member</th>
-                                <th className="text-left p-2">EDIPI</th>
+                                <th className="text-left p-2 hidden sm:table-cell">EDIPI</th>
                                 <th className="text-left p-2">Company</th>
                                 <th className="text-left p-2">Section</th>
                               </tr>
@@ -493,8 +494,8 @@ export default function TaskManagerDashboard() {
                                     }}
                                   >
                                     <td className="p-2">{formNameByTask[subTaskId] || 'Inbound'}</td>
-                                    <td className="p-2">{memberDisp}</td>
-                                    <td className="p-2">{edipi}</td>
+                                    <td className="p-2 truncate">{memberDisp}</td>
+                                    <td className="p-2 hidden sm:table-cell">{edipi}</td>
                                     <td className="p-2">{company}</td>
                                     <td className="p-2">{secDisplay}</td>
                                   </tr>
@@ -503,7 +504,8 @@ export default function TaskManagerDashboard() {
                             </tbody>
                             
                           </table>
-                        </div>
+                          </div>
+                          </div>
                       </div>
                     )
                   })}
@@ -511,83 +513,84 @@ export default function TaskManagerDashboard() {
                 )}
 
                 {inboundView === 'Completed' && (
-                  ((() => {
-                    const mySecName = (mySectionId != null ? (sectionDisplayMap[String(mySectionId)] || '') : '') || sectionPrefix || sectionLabel || ''
-                    const entries = Object.entries(inboundSectionGroupsCompleted).filter(([sec]) => sec === mySecName)
-                    return entries
-                  })().length
-                    ? ((() => {
-                        const mySecName = (mySectionId != null ? (sectionDisplayMap[String(mySectionId)] || '') : '') || sectionPrefix || sectionLabel || ''
-                        return Object.entries(inboundSectionGroupsCompleted).filter(([sec]) => sec === mySecName)
-                      })()).map(([secName, groups]) => (
-                          <div key={secName} className="border border-github-border rounded-xl">
-                            <div className="px-4 py-3 border-b border-github-border flex items-center justify-between">
-                              <h3 className="text-white text-sm">{secName}</h3>
-                              <span className="inline-flex items-center px-2 py-0.5 text-xs border border-github-border rounded bg-green-700 bg-opacity-30 text-green-300">Completed</span>
-                            </div>
-                            <div className="p-4">
-                              <table className="min-w-full text-sm">
-                                <thead className="text-gray-400">
-                                  <tr>
-                                    <th className="text-left p-2">Type</th>
-                                    <th className="text-left p-2">Task</th>
-                                    <th className="text-left p-2">Member</th>
-                                    <th className="text-left p-2">EDIPI</th>
-                                    <th className="text-left p-2">Company</th>
-                                    <th className="text-left p-2">Section</th>
-                                  </tr>
-                                </thead>
-                                <tbody>
-                                  {groups.map(({ subTaskId, members }) => {
-                                    const label = taskLabels[subTaskId]
-                                    const taskDesc = label?.description || subTaskId
-                                    return members.map(mid => {
-                                      const m = memberMap[mid]
-                                      const fullName = [m?.first_name, m?.last_name].filter(Boolean).join(' ')
-                                      const memberDisp = [m?.rank, fullName].filter(Boolean).join(' ') || mid
-                                      const edipi = m?.edipi || mid
-                                      const company = m?.company_id || ''
-                                      return (
-                                        <tr key={`${secName}-${subTaskId}-${mid}`} className="border-t border-github-border text-gray-300">
-                                          <td className="p-2">{formNameByTask[subTaskId] || 'Inbound'}</td>
-                                          <td className="p-2">{taskDesc}</td>
-                                          <td className="p-2">{memberDisp}</td>
-                                          <td className="p-2">{edipi}</td>
-                                          <td className="p-2">{company}</td>
-                                          <td className="p-2">{secName}</td>
-                                        </tr>
-                                      )
-                                    })
-                                  })}
-                                </tbody>
-                              </table>
-                            </div>
-                          </div>
-                        ))
-                      : (
+                  (() => {
+                    const byId = mySectionId != null ? (sectionDisplayMap[String(mySectionId)] || '') : ''
+                    const mySecCandidates = new Set([byId, sectionPrefix, sectionLabel].filter(Boolean))
+                    const entries = Object.entries(inboundSectionGroupsCompleted).filter(([sec]) => mySecCandidates.has(sec))
+                    if (!entries.length) {
+                      return (
                         <div className="border border-github-border rounded-xl">
                           <div className="px-4 py-3 border-b border-github-border flex items-center justify-between">
                             <h3 className="text-white text-sm">{sectionLabel || 'Section'}</h3>
                             <span className="inline-flex items-center px-2 py-0.5 text-xs border border-github-border rounded bg-green-700 bg-opacity-30 text-green-300">Completed</span>
                           </div>
                           <div className="p-4">
-                            <table className="min-w-full text-sm">
+                            <div className="overflow-x-auto">
+                              <table className="min-w-full table-fixed text-xs sm:text-sm">
+                                <thead className="text-gray-400">
+                                  <tr>
+                                    <th className="text-left p-2">Task</th>
+                                    <th className="text-left p-2">Member</th>
+                                    <th className="text-left p-2 hidden sm:table-cell">EDIPI</th>
+                                    <th className="text-left p-2">Company</th>
+                                    <th className="text-left p-2">Section</th>
+                                  </tr>
+                                </thead>
+                                <tbody></tbody>
+                              </table>
+                            </div>
+                          </div>
+                        </div>
+                      )
+                    }
+                    return entries.map(([secName, groups]) => (
+                      <div key={secName} className="border border-github-border rounded-xl">
+                        <div className="px-4 py-3 border-b border-github-border flex items-center justify-between">
+                          <h3 className="text-white text-sm">{secName}</h3>
+                          <span className="inline-flex items-center px-2 py-0.5 text-xs border border-github-border rounded bg-green-700 bg-opacity-30 text-green-300">Completed</span>
+                        </div>
+                        <div className="p-4">
+                          <div className="overflow-x-auto">
+                            <table className="min-w-full table-fixed text-xs sm:text-sm">
                               <thead className="text-gray-400">
                                 <tr>
+                                  <th className="text-left p-2">Type</th>
                                   <th className="text-left p-2">Task</th>
                                   <th className="text-left p-2">Member</th>
-                                  <th className="text-left p-2">EDIPI</th>
+                                  <th className="text-left p-2 hidden sm:table-cell">EDIPI</th>
                                   <th className="text-left p-2">Company</th>
                                   <th className="text-left p-2">Section</th>
                                 </tr>
                               </thead>
                               <tbody>
+                                {groups.map(({ subTaskId, members }) => {
+                                  const label = taskLabels[subTaskId]
+                                  const taskDesc = label?.description || subTaskId
+                                  return members.map(mid => {
+                                    const m = memberMap[mid]
+                                    const fullName = [m?.first_name, m?.last_name].filter(Boolean).join(' ')
+                                    const memberDisp = [m?.rank, fullName].filter(Boolean).join(' ') || mid
+                                    const edipi = m?.edipi || mid
+                                    const company = m?.company_id || ''
+                                    return (
+                                      <tr key={`${secName}-${subTaskId}-${mid}`} className="border-t border-github-border text-gray-300">
+                                        <td className="p-2">{formNameByTask[subTaskId] || 'Inbound'}</td>
+                                        <td className="p-2">{taskDesc}</td>
+                                        <td className="p-2 truncate">{memberDisp}</td>
+                                        <td className="p-2 hidden sm:table-cell">{edipi}</td>
+                                        <td className="p-2">{company}</td>
+                                        <td className="p-2">{secName}</td>
+                                      </tr>
+                                    )
+                                  })
+                                })}
                               </tbody>
                             </table>
                           </div>
                         </div>
-                      )
-                  )
+                      </div>
+                    ))
+                  })()
                 )}
 
                 
@@ -625,12 +628,13 @@ export default function TaskManagerDashboard() {
                           <span className={`inline-flex items-center px-2 py-0.5 text-xs border border-github-border rounded bg-yellow-700 bg-opacity-30 text-yellow-300`}>{pendingCount}</span>
                         </div>
                         <div className="p-4">
-                          <table className="min-w-full text-sm">
+                          <div className="overflow-x-auto">
+                          <table className="min-w-full table-fixed text-xs sm:text-sm">
                             <thead className="text-gray-400">
                               <tr>
                                 <th className="text-left p-2">Type</th>
                                 <th className="text-left p-2">Member</th>
-                                <th className="text-left p-2">EDIPI</th>
+                                <th className="text-left p-2 hidden sm:table-cell">EDIPI</th>
                                 <th className="text-left p-2">Company</th>
                                 <th className="text-left p-2">Section</th>
                               </tr>
@@ -658,8 +662,8 @@ export default function TaskManagerDashboard() {
                                     }}
                                   >
                                     <td className="p-2">{formNameByTask[subTaskId] || 'Outbound'}</td>
-                                    <td className="p-2">{memberDisp}</td>
-                                    <td className="p-2">{edipi}</td>
+                                    <td className="p-2 truncate">{memberDisp}</td>
+                                    <td className="p-2 hidden sm:table-cell">{edipi}</td>
                                     <td className="p-2">{company}</td>
                                     <td className="p-2">{secDisplay}</td>
                                   </tr>
@@ -670,33 +674,57 @@ export default function TaskManagerDashboard() {
                           </table>
                         </div>
                       </div>
+                      </div>
                     )
                   })}
                   </div>
                 )}
                 {outboundView === 'Completed' && (
-                  ((() => {
-                    const mySecName = (mySectionId != null ? (sectionDisplayMap[String(mySectionId)] || '') : '') || sectionPrefix || sectionLabel || ''
-                    const entries = Object.entries(outboundSectionGroupsCompleted).filter(([sec]) => sec === mySecName)
-                    return entries
-                  })().length
-                    ? ((() => {
-                        const mySecName = (mySectionId != null ? (sectionDisplayMap[String(mySectionId)] || '') : '') || sectionPrefix || sectionLabel || ''
-                        return Object.entries(outboundSectionGroupsCompleted).filter(([sec]) => sec === mySecName)
-                      })()).map(([secName, groups]) => (
-                        <div key={secName} className="border border-github-border rounded-xl">
+                  (() => {
+                    const byId = mySectionId != null ? (sectionDisplayMap[String(mySectionId)] || '') : ''
+                    const mySecCandidates = new Set([byId, sectionPrefix, sectionLabel].filter(Boolean))
+                    const entries = Object.entries(outboundSectionGroupsCompleted).filter(([sec]) => mySecCandidates.has(sec))
+                    if (!entries.length) {
+                      return (
+                        <div className="border border-github-border rounded-xl">
                           <div className="px-4 py-3 border-b border-github-border flex items-center justify-between">
-                            <h3 className="text-white text-sm">{secName}</h3>
+                            <h3 className="text-white text-sm">{sectionLabel || 'Section'}</h3>
                             <span className="inline-flex items-center px-2 py-0.5 text-xs border border-github-border rounded bg-green-700 bg-opacity-30 text-green-300">Completed</span>
                           </div>
                           <div className="p-4">
-                            <table className="min-w-full text-sm">
+                            <div className="overflow-x-auto">
+                              <table className="min-w-full table-fixed text-xs sm:text-sm">
+                                <thead className="text-gray-400">
+                                  <tr>
+                                    <th className="text-left p-2">Task</th>
+                                    <th className="text-left p-2">Member</th>
+                                    <th className="text-left p-2 hidden sm:table-cell">EDIPI</th>
+                                    <th className="text-left p-2">Company</th>
+                                    <th className="text-left p-2">Section</th>
+                                  </tr>
+                                </thead>
+                                <tbody></tbody>
+                              </table>
+                            </div>
+                          </div>
+                        </div>
+                      )
+                    }
+                    return entries.map(([secName, groups]) => (
+                      <div key={secName} className="border border-github-border rounded-xl">
+                        <div className="px-4 py-3 border-b border-github-border flex items-center justify-between">
+                          <h3 className="text-white text-sm">{secName}</h3>
+                          <span className="inline-flex items-center px-2 py-0.5 text-xs border border-github-border rounded bg-green-700 bg-opacity-30 text-green-300">Completed</span>
+                        </div>
+                        <div className="p-4">
+                          <div className="overflow-x-auto">
+                            <table className="min-w-full table-fixed text-xs sm:text-sm">
                               <thead className="text-gray-400">
                                 <tr>
                                   <th className="text-left p-2">Type</th>
                                   <th className="text-left p-2">Task</th>
                                   <th className="text-left p-2">Member</th>
-                                  <th className="text-left p-2">EDIPI</th>
+                                  <th className="text-left p-2 hidden sm:table-cell">EDIPI</th>
                                   <th className="text-left p-2">Company</th>
                                   <th className="text-left p-2">Section</th>
                                 </tr>
@@ -715,8 +743,8 @@ export default function TaskManagerDashboard() {
                                       <tr key={`${secName}-${subTaskId}-${mid}`} className="border-t border-github-border text-gray-300">
                                         <td className="p-2">{formNameByTask[subTaskId] || 'Outbound'}</td>
                                         <td className="p-2">{taskDesc}</td>
-                                        <td className="p-2">{memberDisp}</td>
-                                        <td className="p-2">{edipi}</td>
+                                        <td className="p-2 truncate">{memberDisp}</td>
+                                        <td className="p-2 hidden sm:table-cell">{edipi}</td>
                                         <td className="p-2">{company}</td>
                                         <td className="p-2">{secName}</td>
                                       </tr>
@@ -727,31 +755,9 @@ export default function TaskManagerDashboard() {
                             </table>
                           </div>
                         </div>
-                      ))
-                    : (
-                        <div className="border border-github-border rounded-xl">
-                          <div className="px-4 py-3 border-b border-github-border flex items-center justify-between">
-                            <h3 className="text-white text-sm">{sectionLabel || 'Section'}</h3>
-                            <span className="inline-flex items-center px-2 py-0.5 text-xs border border-github-border rounded bg-green-700 bg-opacity-30 text-green-300">Completed</span>
-                          </div>
-                          <div className="p-4">
-                            <table className="min-w-full text-sm">
-                              <thead className="text-gray-400">
-                                <tr>
-                                  <th className="text-left p-2">Task</th>
-                                  <th className="text-left p-2">Member</th>
-                                  <th className="text-left p-2">EDIPI</th>
-                                  <th className="text-left p-2">Company</th>
-                                  <th className="text-left p-2">Section</th>
-                                </tr>
-                              </thead>
-                              <tbody>
-                              </tbody>
-                            </table>
-                          </div>
-                        </div>
-                      )
-                  )
+                      </div>
+                    ))
+                  })()
                 )}
                 
 
