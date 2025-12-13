@@ -23,6 +23,7 @@ export default function BrandMark() {
       />
       <div className="flex flex-col leading-tight min-w-0">
         <span className="font-heading uppercase tracking-wider text-semper-cream text-sm sm:text-xl truncate">{import.meta.env.VITE_APP_NAME}</span>
+        <span className="text-[10px] text-gray-400 tracking-wide hidden lg:block">Virtual Initiation Check-In Interface Offboarding Utility System</span>
         <span className="text-xs text-semper-gold tracking-wide hidden sm:block">by Semper Admin</span>
       </div>
     </div>

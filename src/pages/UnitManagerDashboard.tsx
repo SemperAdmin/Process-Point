@@ -8,6 +8,8 @@ import { getRoleOverride } from '@/utils/localUsersStore'
 import { normalizeOrgRole } from '@/utils/roles'
 import { listSections, listCompanies } from '@/utils/unitStructure'
 import { MyFormSubmission, MyFormSubmissionTask } from '@/utils/myFormSubmissionsStore'
+import { listSubTasks, UnitSubTask } from '@/utils/unitTasks'
+import { googleMapsLink } from '@/utils/maps'
 
 
 export default function UnitManagerDashboard() {
@@ -21,10 +23,11 @@ export default function UnitManagerDashboard() {
   const [latestOutboundMap, setLatestOutboundMap] = useState<Record<string, any>>({})
   const [unitFormStatus, setUnitFormStatus] = useState<Array<{ user_id: string; edipi?: string; form_name: string; kind: 'Inbound' | 'Outbound'; total: number; cleared: number; status: 'In_Progress' | 'Completed'; created_at?: string; completed_at?: string; arrival_date?: string; departure_date?: string; section?: string; company?: string }>>([])
   const [previewSubmission, setPreviewSubmission] = useState<any | null>(null)
-  const [previewPendingBySection, setPreviewPendingBySection] = useState<Record<string, string[]>>({})
-  const [previewCompletedRows, setPreviewCompletedRows] = useState<Array<{ section: string; task: string; note?: string; at?: string }>>([])
+  const [previewPendingBySection, setPreviewPendingBySection] = useState<Record<string, { sub_task_id: string; description: string; location?: string; map_url?: string; instructions?: string; completion_kind?: string; link_url?: string }[]>>({})
+  const [previewCompletedRows, setPreviewCompletedRows] = useState<Array<{ section: string; task: string; note?: string; at?: string; by?: string }>>([])
   const [inboundView, setInboundView] = useState<'Pending' | 'Completed'>('Pending')
   const [outboundView, setOutboundView] = useState<'Pending' | 'Completed'>('Pending')
+  const [subTaskMap, setSubTaskMap] = useState<Record<string, UnitSubTask>>({})
 
   // Column filters
   const [filterMember, setFilterMember] = useState('')
@@ -114,9 +117,18 @@ export default function UnitManagerDashboard() {
     const formName = row.form_name
     const kind = row.kind
     const createdAt = row.created_at || ''
-    const memberData = { edipi: member?.edipi || '', rank: member?.rank, first_name: member?.first_name, last_name: member?.last_name, company_id: member?.company_id, platoon_id: member?.platoon_id }
+    const memberData = {
+      edipi: member?.edipi || '',
+      rank: member?.rank,
+      first_name: member?.first_name,
+      last_name: member?.last_name,
+      company_id: member?.company_id,
+      platoon_id: member?.platoon_id,
+      email: member?.email,
+      phone_number: member?.phone_number
+    }
     const tasksIds = submissionTasks.map(t => t.sub_task_id)
-    const pendingBySection: Record<string, string[]> = {}
+    const pendingBySection: Record<string, { sub_task_id: string; description: string; location?: string; map_url?: string; instructions?: string; completion_kind?: string; link_url?: string }[]> = {}
     const allSectionNames = new Set<string>()
     for (const tid of tasksIds) {
       const label = taskLabels[tid]
@@ -130,10 +142,19 @@ export default function UnitManagerDashboard() {
       const label = taskLabels[tid]
       const code = label?.section_name || ''
       const name2 = code ? (sectionDisplayMap[code] || code) : ''
-      pendingBySection[name2].push(label?.description || tid)
+      const st = subTaskMap[tid]
+      pendingBySection[name2].push({
+        sub_task_id: tid,
+        description: label?.description || tid,
+        location: st?.location || '',
+        map_url: (st as any)?.map_url || '',
+        instructions: st?.instructions || '',
+        completion_kind: (st as any)?.completion_kind || '',
+        link_url: (st as any)?.link_url || ''
+      })
     }
     setPreviewPendingBySection(pendingBySection)
-    const completedRows: Array<{ section: string; task: string; note?: string; at?: string }> = []
+    const completedRows: Array<{ section: string; task: string; note?: string; at?: string; by?: string }> = []
     // Get global progress for completion logs (historical tracking)
     const progress = await getProgressByMember(row.user_id)
     for (const tid of tasksIds) {
@@ -143,10 +164,23 @@ export default function UnitManagerDashboard() {
       const secName = code ? (sectionDisplayMap[code] || code) : ''
       const entry = (progress.progress_tasks || []).find(t => String(t.sub_task_id) === String(tid)) as any
       const lastLog = Array.isArray(entry?.logs) && entry.logs.length ? entry.logs[entry.logs.length - 1] : undefined
-      completedRows.push({ section: secName, task: (label?.description || tid), note: lastLog?.note, at: lastLog?.at })
+      const byUserId = (entry as any)?.cleared_by_user_id || ''
+      const actor = byUserId ? memberMap[byUserId] : undefined
+      const byEdipi = (entry as any)?.cleared_by_edipi || ''
+      const by = actor ? [actor.rank, [actor.first_name, actor.last_name].filter(Boolean).join(' ')].filter(Boolean).join(' ') : (byEdipi ? `EDIPI ${byEdipi}` : '')
+      completedRows.push({ section: secName, task: (label?.description || tid), note: lastLog?.note, at: lastLog?.at, by })
     }
     setPreviewCompletedRows(completedRows)
-    setPreviewSubmission({ user_id: row.user_id, unit_id: user?.unit_id, form_name: formName, kind, created_at: createdAt, member: memberData })
+    setPreviewSubmission({
+      user_id: row.user_id,
+      unit_id: user?.unit_id,
+      form_name: formName,
+      kind,
+      created_at: createdAt,
+      member: memberData,
+      arrival_date: (submission as any)?.arrival_date,
+      departure_date: (submission as any)?.departure_date
+    })
   }
 
   useEffect(() => {
@@ -201,6 +235,15 @@ export default function UnitManagerDashboard() {
           }
         }
         setTaskLabels(labels)
+      } catch {}
+
+      // Load sub-task details (location, instructions, etc.)
+      try {
+        const unitKey = (user.unit_id || '').includes('-') ? (user.unit_id as string).split('-')[1] : (user.unit_id as string)
+        const subTasks = await listSubTasks(unitKey)
+        const stMap: Record<string, UnitSubTask> = {}
+        for (const st of subTasks) stMap[st.sub_task_id] = st
+        setSubTaskMap(stMap)
       } catch {}
 
       // Load ALL submissions for the unit (no company filter)
@@ -437,56 +480,80 @@ export default function UnitManagerDashboard() {
               </div>
             )}
             {previewSubmission && (
-              <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50">
-                <div className="w-full max-w-2xl bg-black border border-github-border rounded-xl p-6">
+              <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50 p-4">
+                <div className="w-full max-w-2xl max-h-[80vh] overflow-y-auto bg-black border border-github-border rounded-xl p-6">
                   <h3 className="text-white text-lg mb-4">{previewSubmission.kind} — {previewSubmission.form_name}</h3>
                   <div className="grid grid-cols-2 gap-3 text-sm text-gray-300">
-                    <div><span className="text-gray-400">EDIPI:</span> {previewSubmission.member.edipi}</div>
+                    <div><span className="text-gray-400">Member:</span> {[previewSubmission.member.rank, [previewSubmission.member.first_name, previewSubmission.member.last_name].filter(Boolean).join(' ')].filter(Boolean).join(' ')}</div>
                     <div><span className="text-gray-400">Unit:</span> {previewSubmission.unit_id}</div>
-                    <div className="col-span-2"><span className="text-gray-400">Member:</span> {[previewSubmission.member.rank, [previewSubmission.member.first_name, previewSubmission.member.last_name].filter(Boolean).join(' ')].filter(Boolean).join(' ')}</div>
+                    <div><span className="text-gray-400">EDIPI:</span> {previewSubmission.member.edipi}</div>
                     <div><span className="text-gray-400">Company:</span> {companyDisplayMap[previewSubmission.member.company_id || ''] || previewSubmission.member.company_id || ''}</div>
+                    <div><span className="text-gray-400">Email:</span> {previewSubmission.member.email || ''}</div>
                     <div><span className="text-gray-400">Section:</span> {sectionDisplayMap[String(previewSubmission.member.platoon_id || '')] || previewSubmission.member.platoon_id || ''}</div>
+                    <div><span className="text-gray-400">Phone:</span> {previewSubmission.member.phone_number || ''}</div>
+                    {previewSubmission.kind === 'Inbound' && (<div><span className="text-gray-400">Arrival:</span> {previewSubmission.arrival_date || ''}</div>)}
+                    {previewSubmission.kind === 'Outbound' && (<div><span className="text-gray-400">Departure:</span> {previewSubmission.departure_date || ''}</div>)}
                   </div>
                   <div className="mt-6 space-y-6">
                     <div>
                       <h4 className="text-white text-sm mb-2">Pending</h4>
-                      {Object.keys(previewPendingBySection).length ? (
+                      {Object.values(previewPendingBySection).some(arr => (arr && arr.length)) ? (
                         <div className="space-y-4">
                           {Object.entries(previewPendingBySection).map(([sec, items]) => (
-                            <div key={sec} className="border border-github-border rounded">
-                              <div className="px-3 py-2 border-b border-github-border text-white text-sm">{sec || 'Section'}</div>
-                              <ul className="p-3 space-y-1 text-sm text-gray-300">
-                                {items.map((d, i) => (<li key={`${sec}-${i}`}>{d}</li>))}
-                              </ul>
-                            </div>
+                            items.length ? (
+                              <div key={sec} className="border border-github-border rounded">
+                                <div className="px-3 py-2 border-b border-github-border text-white text-sm">{sec || 'Section'}</div>
+                                <ul className="p-3 space-y-1 text-sm text-gray-300">
+                                  {items.map((d, i) => (
+                                    <li key={`${sec}-${i}`} className="flex flex-wrap items-center gap-2">
+                                      <span>{d.description}</span>
+                                      {d.completion_kind === 'Link' && d.link_url ? (
+                                        <a
+                                          href={d.link_url}
+                                          target="_blank"
+                                          rel="noreferrer"
+                                          className="px-2 py-0.5 bg-green-600 hover:bg-green-700 text-white rounded text-xs"
+                                        >
+                                          Open Link
+                                        </a>
+                                      ) : (
+                                        <>
+                                          {(() => {
+                                            const url = d.map_url || (d.location ? googleMapsLink(d.location) : '')
+                                            if (d.location && url) return (<><span className="text-gray-500">|</span><a href={url} target="_blank" rel="noreferrer" className="text-github-blue hover:underline">{d.location}</a></>)
+                                            if (d.location) return (<><span className="text-gray-500">|</span><span className="text-gray-400">{d.location}</span></>)
+                                            return null
+                                          })()}
+                                          {d.instructions ? (<><span className="text-gray-500">|</span><span className="text-gray-400">{d.instructions}</span></>) : null}
+                                        </>
+                                      )}
+                                    </li>
+                                  ))}
+                                </ul>
+                              </div>
+                            ) : null
                           ))}
                         </div>
                       ) : (<div className="text-gray-400 text-sm">None</div>)}
                     </div>
-                    <div>
+                    <div className="overflow-x-auto">
                       <h4 className="text-white text-sm mb-2">Completed</h4>
                       {previewCompletedRows.length ? (
-                        <div className="overflow-x-auto">
-                        <table className="min-w-full table-fixed text-xs sm:text-sm">
-                          <thead className="text-gray-400">
-                            <tr>
-                              <th className="text-left p-2">Section</th>
-                              <th className="text-left p-2">Task</th>
-                              <th className="text-left p-2">Log</th>
-                              <th className="text-left p-2">When</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {previewCompletedRows.map((r, i) => (
-                              <tr key={`row-${i}`} className="border-t border-github-border text-gray-300">
-                                <td className="p-2 truncate">{r.section || ''}</td>
-                                <td className="p-2 truncate">{r.task}</td>
-                                <td className="p-2 truncate">{r.note || ''}</td>
-                                <td className="p-2">{r.at || ''}</td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
+                        <div className="text-sm">
+                          <div className="grid grid-cols-4 text-gray-400 mb-2">
+                            <div className="text-left p-2">Section</div>
+                            <div className="text-left p-2">Task</div>
+                            <div className="text-left p-2">Log</div>
+                            <div className="text-left p-2">When</div>
+                          </div>
+                          {previewCompletedRows.map((r, i) => (
+                            <div key={`row-${i}`} className="grid grid-cols-4 items-center border-t border-github-border text-gray-300 hover:bg-red-900 hover:bg-opacity-30 transition-colors">
+                              <div className="p-2">{r.section || ''}</div>
+                              <div className="p-2">{r.task}</div>
+                              <div className="p-2">{[r.note, (r.by ? `— ${r.by}` : '')].filter(Boolean).join(' ')}</div>
+                              <div className="p-2">{r.at || ''}</div>
+                            </div>
+                          ))}
                         </div>
                       ) : (<div className="text-gray-400 text-sm">None</div>)}
                     </div>
