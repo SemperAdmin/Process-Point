@@ -4,14 +4,14 @@ import HeaderTools from '@/components/HeaderTools'
 import BrandMark from '@/components/BrandMark'
 import { useAuthStore } from '@/stores/authStore'
 import { listPendingForSectionManager, listArchivedForUser, getProgressByMember, getChecklistByUnit, fetchJson, LocalUserProfile, UsersIndexEntry } from '@/services/localDataService'
-import { listSections } from '@/utils/unitStructure'
+import { listSections, listCompanies, UnitCompany, UnitSection } from '@/utils/unitStructure'
 import { listForms, UnitForm } from '@/utils/formsStore'
 import { listSubTasks, UnitSubTask } from '@/utils/unitTasks'
 import { UNITS } from '@/utils/units'
 import { getRoleOverride } from '@/utils/localUsersStore'
 import { googleMapsLink } from '@/utils/maps'
 import { normalizeOrgRole, normalizeSectionRole } from '@/utils/roles'
-import { sbListUsers, sbListMemberFormCompletion } from '@/services/supabaseDataService'
+import { sbListUsers, sbListMemberFormCompletion, sbUpdateUser } from '@/services/supabaseDataService'
 import { sbListSubmissionsBySponsor } from '@/services/adminService'
 import { createSubmission, listSubmissions, MyFormSubmission } from '@/utils/myFormSubmissionsStore'
 import { sbUpsertProgress } from '@/services/supabaseDataService'
@@ -22,7 +22,7 @@ import { sha256String } from '@/utils/crypto'
 
 export default function MyDashboard() {
   const navigate = useNavigate()
-  const { user, isAuthenticated } = useAuthStore()
+  const { user, isAuthenticated, login } = useAuthStore()
   const [memberTasks, setMemberTasks] = useState<{ sub_task_id: string; status: string }[]>([])
   const [pendingSection, setPendingSection] = useState<{ member_user_id: string; sub_task_id: string }[]>([])
   const [mySubmissions, setMySubmissions] = useState<MyFormSubmission[]>([])
@@ -57,6 +57,10 @@ export default function MyDashboard() {
   const [unitSearchQuery, setUnitSearchQuery] = useState('')
   const [showUnitDropdown, setShowUnitDropdown] = useState(false)
   const [formCompletion, setFormCompletion] = useState<Record<number, { completed: number; total: number }>>({})
+  const [availableCompanies, setAvailableCompanies] = useState<UnitCompany[]>([])
+  const [availableSections, setAvailableSections] = useState<UnitSection[]>([])
+  const [selectedCompany, setSelectedCompany] = useState('')
+  const [selectedSection, setSelectedSection] = useState('')
 
   // Memoized map of latest submissions per form+kind to avoid repeated filter/sort operations
   const latestSubmissionsMap = useMemo(() => {
@@ -147,6 +151,41 @@ export default function MyDashboard() {
     }
     setFormCompletion(comp)
   }, [forms, latestSubmissionsMap])
+
+  // Load companies and sections when unit is selected for Inbound form
+  useEffect(() => {
+    if (!selectedUnit || newKind !== 'Inbound') {
+      setAvailableCompanies([])
+      setAvailableSections([])
+      setSelectedCompany('')
+      setSelectedSection('')
+      return
+    }
+    const loadUnitStructure = async () => {
+      try {
+        const [companies, sections] = await Promise.all([
+          listCompanies(selectedUnit),
+          listSections(selectedUnit)
+        ])
+        setAvailableCompanies(companies)
+        setAvailableSections(sections)
+        // Pre-select user's current company if it exists
+        if (user?.company_id && companies.find(c => c.company_id === user.company_id)) {
+          setSelectedCompany(user.company_id)
+          // Pre-select user's current section if it exists in this company
+          if (user?.platoon_id) {
+            const matchingSection = sections.find(s => s.section_name === user.platoon_id && s.company_id === user.company_id)
+            if (matchingSection) {
+              setSelectedSection(user.platoon_id)
+            }
+          }
+        }
+      } catch (err) {
+        console.error('Failed to load unit structure:', err)
+      }
+    }
+    loadUnitStructure()
+  }, [selectedUnit, newKind, user?.company_id, user?.platoon_id])
 
   const pendingListRows = useMemo(() => {
     if (!user) return [] as Array<{ key: string; name: string; unit: string; created: string; formId: number; kind: 'Inbound' }>
@@ -1225,11 +1264,47 @@ export default function MyDashboard() {
                     )}
                   </div>
                 )}
+                {newKind === 'Inbound' && selectedUnit && availableCompanies.length > 0 && (
+                  <div>
+                    <label className="block text-sm text-gray-400 mb-1">Company</label>
+                    <select
+                      value={selectedCompany}
+                      onChange={e => { setSelectedCompany(e.target.value); setSelectedSection('') }}
+                      className="w-full px-3 py-2 bg-github-gray bg-opacity-20 border border-github-border rounded text-white"
+                    >
+                      <option value="">Select company</option>
+                      {availableCompanies.map(c => (
+                        <option key={c.id} value={c.company_id}>{c.display_name || c.company_id}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+                {newKind === 'Inbound' && selectedUnit && selectedCompany && availableSections.filter(s => s.company_id === selectedCompany).length > 0 && (
+                  <div>
+                    <label className="block text-sm text-gray-400 mb-1">Section</label>
+                    <select
+                      value={selectedSection}
+                      onChange={e => setSelectedSection(e.target.value)}
+                      className="w-full px-3 py-2 bg-github-gray bg-opacity-20 border border-github-border rounded text-white"
+                    >
+                      <option value="">Select section</option>
+                      {availableSections.filter(s => s.company_id === selectedCompany).map(s => (
+                        <option key={s.id} value={s.section_name}>{s.display_name || s.section_name}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
                 {newKind === 'Inbound' && (
-                  <input type="date" value={arrivalDate} onChange={e => setArrivalDate(e.target.value)} className="px-3 py-2 bg-github-gray bg-opacity-20 border border-github-border rounded text-white" />
+                  <div>
+                    <label className="block text-sm text-gray-400 mb-1">Arrival Date (when you arrived at this unit)</label>
+                    <input type="date" value={arrivalDate} onChange={e => setArrivalDate(e.target.value)} className="w-full px-3 py-2 bg-github-gray bg-opacity-20 border border-github-border rounded text-white" />
+                  </div>
                 )}
                 {newKind === 'Outbound' && (
-                  <input type="date" value={departureDate} onChange={e => setDepartureDate(e.target.value)} className="px-3 py-2 bg-github-gray bg-opacity-20 border border-github-border rounded text-white" />
+                  <div>
+                    <label className="block text-sm text-gray-400 mb-1">Departure Date (when you will leave this unit)</label>
+                    <input type="date" value={departureDate} onChange={e => setDepartureDate(e.target.value)} className="w-full px-3 py-2 bg-github-gray bg-opacity-20 border border-github-border rounded text-white" />
+                  </div>
                 )}
                 <select value={selectedFormId ?? ''} onChange={e => setSelectedFormId(Number(e.target.value) || null)} className="px-3 py-2 bg-github-gray bg-opacity-20 border border-github-border rounded text-white">
                   <option value="">Select form</option>
@@ -1259,6 +1334,11 @@ export default function MyDashboard() {
                   const form = forms.find(f => f.id === selectedFormId)
                   if (!form) return
                   const tasks = form.task_ids.map(tid => ({ sub_task_id: tid, description: tid, status: 'Pending' as const }))
+
+                  // For Inbound forms, use selected company/section
+                  const memberCompany = newKind === 'Inbound' && selectedCompany ? selectedCompany : user.company_id
+                  const memberSection = newKind === 'Inbound' && selectedSection ? selectedSection : user.platoon_id
+
                   const submission: any = {
                     user_id: user.user_id,
                     unit_id: newKind === 'Outbound' ? user.unit_id : (selectedUnit || user.unit_id),
@@ -1270,8 +1350,8 @@ export default function MyDashboard() {
                       rank: user.rank,
                       first_name: user.first_name,
                       last_name: user.last_name,
-                      company_id: user.company_id,
-                      platoon_id: user.platoon_id,
+                      company_id: memberCompany,
+                      platoon_id: memberSection,
                       email: user.email,
                       phone_number: user.phone_number,
                       current_unit_id: user.unit_id
@@ -1287,13 +1367,33 @@ export default function MyDashboard() {
                     submission.departure_date = departureDate || new Date().toISOString().slice(0,10)
                     submission.destination_unit_id = selectedUnit || ''
                   }
-                  try { await createSubmission(submission); setMySubmissions(await listSubmissions(user.user_id)) } catch (err) { console.error(err) }
+                  try {
+                    await createSubmission(submission)
+
+                    // Update user's company and section in profile for Inbound forms
+                    if (newKind === 'Inbound' && (selectedCompany || selectedSection || selectedUnit)) {
+                      const profileUpdate: Partial<LocalUserProfile> = {}
+                      if (selectedCompany) profileUpdate.company_id = selectedCompany
+                      if (selectedSection) profileUpdate.platoon_id = selectedSection
+                      if (selectedUnit) profileUpdate.unit_id = selectedUnit
+
+                      await sbUpdateUser(user.user_id, profileUpdate)
+
+                      // Update local state
+                      const updatedUser = { ...user, ...profileUpdate } as typeof user
+                      login(updatedUser)
+                    }
+
+                    setMySubmissions(await listSubmissions(user.user_id))
+                  } catch (err) { console.error(err) }
                   setCreateOpen(false)
                   setNewKind('Inbound')
                   const first = forms.filter(f => f.kind === 'Inbound')[0]
                   setSelectedFormId(first ? first.id : null)
+                  setSelectedCompany('')
+                  setSelectedSection('')
                 }} className="px-4 py-2 bg-github-blue hover:bg-blue-600 text-white rounded">Save</button>
-                <button onClick={() => setCreateOpen(false)} className="px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded">Cancel</button>
+                <button onClick={() => { setCreateOpen(false); setSelectedCompany(''); setSelectedSection('') }} className="px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded">Cancel</button>
               </div>
             </div>
           </div>
