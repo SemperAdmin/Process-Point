@@ -232,7 +232,7 @@ export default function SponsorshipCoordinatorDashboard() {
                         <>
                           <tr
                             key={submission.id}
-                            className={`border-t border-github-border text-gray-300 hover:bg-red-900 hover:bg-opacity-30 cursor-pointer transition-colors ${isExpanded ? 'bg-red-900 bg-opacity-20' : ''}`}
+                            className={`border-t border-github-border text-gray-300 hover:bg-[#AD1B3F] cursor-pointer transition-colors ${isExpanded ? 'bg-red-900 bg-opacity-20' : ''}`}
                             onClick={() => setExpandedRow(isExpanded ? null : submission.id)}
                           >
                             <td className="p-2">

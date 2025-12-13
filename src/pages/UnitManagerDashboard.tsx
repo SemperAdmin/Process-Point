@@ -396,7 +396,7 @@ export default function UnitManagerDashboard() {
                           const m = memberMap[row.user_id]
                           const name = m ? [m.first_name, m.last_name].filter(Boolean).join(' ') : row.user_id
                           return (
-                            <tr key={`${row.user_id}-${row.form_name}-${row.created_at}`} className="border-t border-github-border text-gray-300 hover:bg-red-900 hover:bg-opacity-30 transition-colors">
+                            <tr key={`${row.user_id}-${row.form_name}-${row.created_at}`} className="border-t border-github-border text-gray-300 hover:bg-[#AD1B3F] transition-colors">
                               <td className="p-2 truncate">{[m?.rank, name].filter(Boolean).join(' ')}</td>
                               <td className="p-2 hidden sm:table-cell">{m?.edipi || ''}</td>
                               <td className="p-2">{row.company || ''}</td>
@@ -453,7 +453,7 @@ export default function UnitManagerDashboard() {
                           const m = memberMap[row.user_id]
                           const name = m ? [m.first_name, m.last_name].filter(Boolean).join(' ') : row.user_id
                           return (
-                            <tr key={`${row.user_id}-${row.form_name}-${row.created_at}`} className="border-t border-github-border text-gray-300 hover:bg-red-900 hover:bg-opacity-30 transition-colors">
+                            <tr key={`${row.user_id}-${row.form_name}-${row.created_at}`} className="border-t border-github-border text-gray-300 hover:bg-[#AD1B3F] transition-colors">
                               <td className="p-2 truncate">{[m?.rank, name].filter(Boolean).join(' ')}</td>
                               <td className="p-2 hidden sm:table-cell">{m?.edipi || ''}</td>
                               <td className="p-2">{row.company || ''}</td>
@@ -547,7 +547,7 @@ export default function UnitManagerDashboard() {
                             <div className="text-left p-2">When</div>
                           </div>
                           {previewCompletedRows.map((r, i) => (
-                            <div key={`row-${i}`} className="grid grid-cols-4 items-center border-t border-github-border text-gray-300 hover:bg-red-900 hover:bg-opacity-30 transition-colors">
+                            <div key={`row-${i}`} className="grid grid-cols-4 items-center border-t border-github-border text-gray-300 hover:bg-[#AD1B3F] transition-colors">
                               <div className="p-2">{r.section || ''}</div>
                               <div className="p-2">{r.task}</div>
                               <div className="p-2">{[r.note, (r.by ? `— ${r.by}` : '')].filter(Boolean).join(' ')}</div>
@@ -605,7 +605,7 @@ export default function UnitManagerDashboard() {
                           const m = memberMap[row.user_id]
                           const name = m ? [m.first_name, m.last_name].filter(Boolean).join(' ') : row.user_id
                           return (
-                            <tr key={`${row.user_id}-${row.form_name}-${row.created_at}`} className="border-t border-github-border text-gray-300 hover:bg-red-900 hover:bg-opacity-30 transition-colors">
+                            <tr key={`${row.user_id}-${row.form_name}-${row.created_at}`} className="border-t border-github-border text-gray-300 hover:bg-[#AD1B3F] transition-colors">
                               <td className="p-2 truncate">{[m?.rank, name].filter(Boolean).join(' ')}</td>
                               <td className="p-2 hidden sm:table-cell">{m?.edipi || ''}</td>
                               <td className="p-2">{row.company || ''}</td>
@@ -662,7 +662,7 @@ export default function UnitManagerDashboard() {
                           const m = memberMap[row.user_id]
                           const name = m ? [m.first_name, m.last_name].filter(Boolean).join(' ') : row.user_id
                           return (
-                            <tr key={`${row.user_id}-${row.form_name}-${row.created_at}`} className="border-t border-github-border text-gray-300 hover:bg-red-900 hover:bg-opacity-30 transition-colors">
+                            <tr key={`${row.user_id}-${row.form_name}-${row.created_at}`} className="border-t border-github-border text-gray-300 hover:bg-[#AD1B3F] transition-colors">
                               <td className="p-2 truncate">{[m?.rank, name].filter(Boolean).join(' ')}</td>
                               <td className="p-2 hidden sm:table-cell">{m?.edipi || ''}</td>
                               <td className="p-2">{row.company || ''}</td>
