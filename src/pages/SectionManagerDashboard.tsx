@@ -504,7 +504,7 @@ export default function SectionManagerDashboard() {
                             <div className="text-left p-2">When</div>
                           </div>
                           {previewCompletedRows.map((r, i) => (
-                            <div key={`row-${i}`} className="grid grid-cols-4 items-center border-t border-github-border text-gray-300 hover:bg-red-900 hover:bg-opacity-30 transition-colors">
+                            <div key={`row-${i}`} className="grid grid-cols-4 items-center border-t border-github-border text-gray-300 hover:bg-[#AD1B3F] transition-colors">
                               <div className="p-2">{r.section || ''}</div>
                               <div className="p-2">{r.task}</div>
                               <div className="p-2">{[r.note, (r.by ? `— ${r.by}` : '')].filter(Boolean).join(' ')}</div>

@@ -197,7 +197,7 @@ export default function AdminDashboard() {
                         )
                       })
                       return (
-                        <tr key={uk} className="border-t border-github-border text-gray-300 hover:bg-red-900 hover:bg-opacity-30 transition-colors">
+                        <tr key={uk} className="border-t border-github-border text-gray-300 hover:bg-[#AD1B3F] transition-colors">
                           <td className="p-2"><div>{u.unit_name}</div></td>
                           <td className="p-2">{u.uic}</td>
                           <td className="p-2">{u.ruc}</td>
@@ -283,7 +283,7 @@ export default function AdminDashboard() {
                   </thead>
                   <tbody>
                     {filteredUsers.map(u => (
-                      <tr key={u.user_id || u.edipi} className="border-t border-github-border text-gray-300 hover:bg-red-900 hover:bg-opacity-30 transition-colors">
+                      <tr key={u.user_id || u.edipi} className="border-t border-github-border text-gray-300 hover:bg-[#AD1B3F] transition-colors">
                         <td className="p-2">{u.edipi || ''}</td>
                         <td className="p-2">{[u.first_name, u.middle_initial, u.last_name].filter(Boolean).join(' ')}</td>
                         <td className="p-2">{u.rank || ''}</td>
